@@ -1,4 +1,4 @@
-package nas
+package uecontext
 
 import (
 	"fmt"
@@ -6,20 +6,9 @@ import (
 	"github.com/reogac/nas"
 )
 
-// UEContext Snssai
-type UEContext struct {
-	SUPI   string
-	PLMN   string
-	RanUeNgapId int
-	AmfUeNgapId int
-	State  string
-	Snssai []byte 
-}
-
-// BuildRegistrationRequest build NAS Registration Request with S-NSSAI
-func BuildRegistrationRequest(ue *UEContext) (*nas.RegistrationRequest, []byte, error) {
+func (ue *UEContext) BuildRegistrationRequest() (*nas.RegistrationRequest, []byte, error) {
 	if len(ue.Snssai) == 0 {
-		ue.Snssai = []byte{0x01, 0x01, 0x02, 0x03} 
+		ue.Snssai = []byte{0x01, 0x01, 0x02, 0x03}
 	}
 
 	msg := &nas.RegistrationRequest{
@@ -39,12 +28,15 @@ func BuildRegistrationRequest(ue *UEContext) (*nas.RegistrationRequest, []byte, 
 		return msg, nil, err
 	}
 
-    // debug 
+	// debug
 	fmt.Printf("NAS RegistrationRequest: PLMN=%s, TAC=%06X, S-NSSAI=", ue.PLMN, 0x000001)
 	for _, b := range ue.Snssai {
 		fmt.Printf("%02X ", b)
 	}
 	fmt.Println()
+
+	fmt.Println("Send msg to gnb")
+	ue.MsgToGnbChan <- buf
 
 	return msg, buf, nil
 }

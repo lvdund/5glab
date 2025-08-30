@@ -1,4 +1,4 @@
-package nas
+package uecontext
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"github.com/reogac/nas"
 )
 
-// HandleNasPdu parse NAS PDU 
-func HandleNasPdu(pdu []byte, nasCtx *nas.NasContext) {
+// HandleNasPdu parse NAS PDU
+func (ue *UEContext) handleNasPdu(pdu []byte) {
 	if len(pdu) == 0 {
 		fmt.Println("NAS PDU empty")
 		return
@@ -15,7 +15,9 @@ func HandleNasPdu(pdu []byte, nasCtx *nas.NasContext) {
 
 	fmt.Printf("NAS PDU raw: % X\n", pdu)
 
-	// Decode NAS message 
+	nasCtx := nas.NewNasContext(false)
+
+	// Decode NAS message
 	var nasMsg nas.NasMessage
 	var err error
 	if nasMsg, err = nas.Decode(nasCtx, pdu, false); err != nil {
@@ -23,7 +25,6 @@ func HandleNasPdu(pdu []byte, nasCtx *nas.NasContext) {
 		return
 	}
 
-	
 	if nasMsg.Gmm != nil {
 		switch nasMsg.Gmm.MsgType {
 		case nas.AuthenticationRequestMsgType:
