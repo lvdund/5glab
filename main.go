@@ -1,4 +1,4 @@
-package internal
+package main
 
 import (
 	"fmt"
@@ -21,13 +21,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}
-	fmt.Println("gnb connected to the AMF")
+	fmt.Println("Gnb connected to the AMF")
 
 	msg := ies.NGSetupRequest{}
 	msg.GlobalRANNodeID = ies.GlobalRANNodeID{
 		Choice: ies.GlobalRANNodeIDPresentGlobalgnbId,
 		GlobalGNBID: &ies.GlobalGNBID{
-			PLMNIdentity: []byte{0x20, 0xF8, 0x39}, // MCC=208, MNC=93 (Free5GC default),
+			PLMNIdentity: []byte{0x02, 0xF8, 0x39}, // MCC=208, MNC=93 (Free5GC default),
 			GNBID: ies.GNBID{
 				Choice: ies.GNBIDPresentGnbId,
 				GNBID: &aper.BitString{
@@ -42,7 +42,7 @@ func main() {
 			TAC: []byte{0x00, 0x00, 0x01}, // TAC = 1
 			BroadcastPLMNList: []ies.BroadcastPLMNItem{
 				{
-					PLMNIdentity: []byte{0x20, 0xF8, 0x39}, // MCC=208, MNC=93
+					PLMNIdentity: []byte{0x02, 0xF8, 0x39}, // MCC=208, MNC=93
 					TAISliceSupportList: []ies.SliceSupportItem{
 						{
 							SNSSAI: ies.SNSSAI{
@@ -57,10 +57,35 @@ func main() {
 	}
 	msg.DefaultPagingDRX = ies.PagingDRX{Value: ies.PagingDRXV128}
 
-	ngapPdu, err := ngap.NgapEncode(&msg)
+	//encode msg
+	b, err := ngap.NgapEncode(&msg)
 	if err != nil {
-		fmt.Printf("Error sending NG set up request ", err)
+		log.Fatalf("Failed to encode")
 	}
-	//amf.sendNgap(ngapPdu)
+	info := &sctp.SndRcvInfo{
+		Stream: uint16(0),
+		PPID:   uint32(60),
+	}
 
+	_, err = conn.SCTPWrite(b, info)
+	if err != nil {
+		fmt.Println("Error sending NGAP message ", err)
+	}
+
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		log.Fatalln("read failed ", err)
+	}
+	fmt.Printf("Got %v bytes from AMF\n", n)
+
+	response := buf[:n]
+	var pdu ngap.NgapPdu
+	pdu, err, _ = ngap.NgapDecode(response)
+	if err != nil {
+		log.Fatalf("decode NGSetupResponse failed: %v", err)
+	}
+
+	decodeMsg := pdu.Message.Msg.(*ies.NGSetupResponse)
+	fmt.Printf("Decoded NGSetupResponse: %+v\n", decodeMsg)
 }
