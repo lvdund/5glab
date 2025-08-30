@@ -1,0 +1,27 @@
+# Configuration for the AMF we are connecting to
+amf:
+  # The address must be in "IP:Port" format
+  address: "192.168.10.20:38412"
+
+# Configuration for our gNB Emulator
+gNB:
+  # Mobile Country Code and Mobile Network Code for your test network
+  mcc: "208"
+  mnc: "93"
+  
+  # Tracking Area Code for the area your gNB serves (as an integer)
+  tac: 1
+  
+  # A unique ID for your gNB (as a hex string, 22-32 bits)
+  gnbId: "1A2B3C"
+
+# Configuration for our UE Emulator
+UE:
+  # The permanent subscriber identity (IMSI) for your test UE
+  imsi: "208930000000001"
+  
+  # The permanent secret key (K) for the SIM card
+  key: "8baf473f2f8fd09487cccbd7097c6862"
+  
+  # A placeholder for the expected RES* for testing (can be filled later)
+  resStar: "00112233445566778899aabbccddeeff"
