@@ -1,10 +1,12 @@
 amf:
   address: "192.168.10.20:38412"
+
 gNB:
-  mcc: "208"
-  mnc: "93"
+  mcc: "001"
+  mnc: "01"
   tac: 1
-  gnbId: "1A2B3C"
+  gnbId: "000001"
+  gnbName: "gnb-01"
 
 UE:
   imsi: "208930000000001"

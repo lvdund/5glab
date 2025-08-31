@@ -3,95 +3,54 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
 	"os"
 
-	"github.com/ishidawataru/sctp"
+	"5g-emulator/internal/gNB/context"
+	"5g-emulator/internal/gNB/handler"
+
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	AMF AMFConfig `yaml:"amf"`
-	GNB GNBConfig `yaml:"gNB"`
-	UE  UEConfig  `yaml:"UE"`
+	AMF AMFConfig         `yaml:"amf"`
+	GNB context.GNBConfig `yaml:"gNB"`
 }
-
 type AMFConfig struct {
 	Address string `yaml:"address"`
 }
 
-type GNBConfig struct {
-	MCC   string `yaml:"mcc"`
-	MNC   string `yaml:"mnc"`
-	TAC   int    `yaml:"tac"`
-	GNBID string `yaml:"gnbId"`
-}
-
-type UEConfig struct {
-	IMSI    string `yaml:"imsi"`
-	Key     string `yaml:"key"`
-	RESStar string `yaml:"resStar"`
-}
-
 func loadConfig() (*Config, error) {
-
 	yamlFile, err := os.ReadFile("config.yaml")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not read config.yaml: %w", err)
 	}
-
 	var cfg Config
 	err = yaml.Unmarshal(yamlFile, &cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not parse config.yaml: %w", err)
 	}
-
 	return &cfg, nil
 }
 
 func main() {
-	log.Println("--- gNB Emulator Starting Up ---")
-
-	log.Println("Loading configuration from config.yaml...")
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.Println("INFO: --- gNB Emulator Starting Up ---")
 	cfg, err := loadConfig()
 	if err != nil {
-		log.Fatalf("FATAL: Failed to load configuration: %v", err)
+		log.Fatalf("FATAL: %v", err)
 	}
-	log.Printf("INFO: Configuration loaded successfully for MCC:%s, MNC:%s", cfg.GNB.MCC, cfg.GNB.MNC)
-
-	amfIP, amfPortStr, err := net.SplitHostPort(cfg.AMF.Address)
+	log.Printf("INFO: Configuration loaded for gNB Name: '%s'", cfg.GNB.GNBName)
+	conn, err := handler.ConnectToAMF(cfg.AMF.Address)
 	if err != nil {
-		log.Fatalf("FATAL: Could not parse AMF address from config: %v", err)
-	}
-
-	log.Printf("Attempting to connect to AMF at %s:%s...", amfIP, amfPortStr)
-
-	ip, err := net.ResolveIPAddr("ip", amfIP)
-	if err != nil {
-		log.Fatalf("FATAL: Failed to resolve AMF IP address: %v", err)
-	}
-
-	var amfPort int
-	_, err = fmt.Sscanf(amfPortStr, "%d", &amfPort)
-	if err != nil {
-		log.Fatalf("FATAL: Could not parse AMF port from config: %v", err)
-	}
-
-	addr := &sctp.SCTPAddr{
-		IPAddrs: []net.IPAddr{*ip},
-		Port:    amfPort,
-	}
-
-	conn, err := sctp.DialSCTP("sctp", nil, addr)
-	if err != nil {
-		log.Fatalf("FATAL: Could not establish SCTP connection with AMF: %v", err)
+		log.Fatalf("FATAL: %v", err)
 	}
 	defer conn.Close()
-
-	log.Printf("SUCCESS: SCTP Connection Established to AMF at %s", conn.RemoteAddr())
-
-	log.Println("INFO: Next step is to perform NG Setup...")
-
-	log.Println("INFO: Connection is stable. The gNB will now idle.")
+	gnbCtx := context.NewGNBContext(&cfg.GNB, conn)
+	amfName, err := handler.PerformNGSetup(gnbCtx)
+	if err != nil {
+		log.Fatalf("FATAL: NG Setup procedure failed: %v", err)
+	}
+	log.Printf("SUCCESS: NG Setup complete. Connected to AMF: '%s'", amfName)
+	log.Println("INFO: gNB is now operational. Idling to keep connection alive...")
 	select {}
 }
