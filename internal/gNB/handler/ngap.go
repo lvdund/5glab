@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
@@ -58,8 +57,14 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 				TAC: tacBytes,
 				BroadcastPLMNList: []ies.BroadcastPLMNItem{
 					{
-						PLMNIdentity:        plmnIDBytes,
-						TAISliceSupportList: []ies.SliceSupportItem{},
+						PLMNIdentity: plmnIDBytes,
+						TAISliceSupportList: []ies.SliceSupportItem{
+							{
+								SNSSAI: ies.SNSSAI{
+									SST: []byte{1},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -67,24 +72,24 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 		DefaultPagingDRX: ies.PagingDRX{Value: ies.PagingDRXV128},
 	}
 
-	var buffer bytes.Buffer
-	err = ngSetupRequest.Encode(&buffer)
+	encodedPDU, err := ngap.NgapEncode(&ngSetupRequest)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode NG Setup Request: %w", err)
 	}
-	encodedPDU := buffer.Bytes()
 
+	// Use SCTPWrite to include the correct PPID.
 	info := &sctp.SndRcvInfo{
 		Stream: 0,
-		PPID:   60,
+		PPID:   60, // The IANA-assigned PPID for the NGAP protocol.
 	}
-
 	_, err = conn.SCTPWrite(encodedPDU, info)
 	if err != nil {
 		return "", fmt.Errorf("failed to send NG Setup Request over SCTP: %w", err)
 	}
 	log.Println("INFO: NG Setup Request sent successfully.")
+
 	log.Println("INFO: --- [Step 2] Waiting for NG Setup Response ---")
+	// --- ... ---
 	readBuffer := make([]byte, 8192)
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	n, _, err := conn.SCTPRead(readBuffer)
