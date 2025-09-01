@@ -77,10 +77,9 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 		return "", fmt.Errorf("failed to encode NG Setup Request: %w", err)
 	}
 
-	// Use SCTPWrite to include the correct PPID.
 	info := &sctp.SndRcvInfo{
 		Stream: 0,
-		PPID:   60, // The IANA-assigned PPID for the NGAP protocol.
+		PPID:   60,
 	}
 	_, err = conn.SCTPWrite(encodedPDU, info)
 	if err != nil {
