@@ -15,8 +15,12 @@ import (
 )
 
 func main() {
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		log.Fatalln("Error in loading config file ", err)
+	}
 	amfAddr := &sctp.SCTPAddr{
-		IPAddrs: []net.IPAddr{{IP: net.ParseIP("192.168.56.3")}},
+		IPAddrs: []net.IPAddr{{IP: net.ParseIP(cfg.AMF.IP)}},
 		Port:    38412,
 	}
 
@@ -27,10 +31,6 @@ func main() {
 	go sctpngap.SctpListen(conn) // keep connection to amf
 	fmt.Println("Gnb established connection to the AMF")
 
-	cfg, err := config.Load("config.yaml")
-	if err != nil {
-		log.Fatalln("Error in loading config file ", err)
-	}
 	gnb := &gnb.GNodeB{
 		GnbID: cfg.GNB.GNBID,
 		PLMN:  cfg.UE.PLMN,
