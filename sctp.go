@@ -39,9 +39,9 @@ func handleNgap(ngapPduMsg ngap.NgapPdu) {
 		switch ngapPduMsg.Message.ProcedureCode.Value {
 
 		case ies.ProcedureCode_DownlinkNASTransport:
-			fmt.Println("Receive Downlink NAS Transport")
+			fmt.Printf("Receive Downlink NAS Transport")
 		default:
-			fmt.Println("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
+			fmt.Printf("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
 		}
 
 	case ies.NgapPduSuccessfulOutcome:
@@ -52,7 +52,7 @@ func handleNgap(ngapPduMsg ngap.NgapPdu) {
 			fmt.Println("Receive NG Setup Response")
 
 		default:
-			fmt.Println("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
+			fmt.Printf("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
 		}
 
 	case ies.NgapPduUnsuccessfulOutcome:
@@ -63,7 +63,7 @@ func handleNgap(ngapPduMsg ngap.NgapPdu) {
 			fmt.Println("Receive Ng Setup Failure")
 
 		default:
-			fmt.Println("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
+			fmt.Printf("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
 		}
 	}
 }

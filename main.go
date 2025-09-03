@@ -13,7 +13,7 @@ import (
 
 func main() {
 	amfAddr := &sctp.SCTPAddr{
-		IPAddrs: []net.IPAddr{{IP: net.ParseIP("127.0.0.8")}},
+		IPAddrs: []net.IPAddr{{IP: net.ParseIP("192.168.56.3")}},
 		Port:    38412,
 	}
 
