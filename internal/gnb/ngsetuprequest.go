@@ -8,7 +8,7 @@ import (
 	"github.com/lvdund/ngap/ies"
 )
 
-func (gnb *Gnb) GetNgSetupRequest() []byte {
+func (gnb *GNodeB) GetNgSetupRequest() []byte {
 	msg := ies.NGSetupRequest{}
 	msg.GlobalRANNodeID = ies.GlobalRANNodeID{
 		Choice: ies.GlobalRANNodeIDPresentGlobalgnbId,
@@ -17,7 +17,7 @@ func (gnb *Gnb) GetNgSetupRequest() []byte {
 			GNBID: ies.GNBID{
 				Choice: ies.GNBIDPresentGnbId,
 				GNBID: &aper.BitString{
-					Bytes:   gnb.getGnbIdInBytes(), // Example gNB ID: 0x00010203
+					Bytes:   gnb.getGnbIdInBytes(),
 					NumBits: 24,
 				},
 			},
@@ -25,15 +25,15 @@ func (gnb *Gnb) GetNgSetupRequest() []byte {
 	}
 	msg.SupportedTAList = []ies.SupportedTAItem{
 		{
-			TAC: gnb.getTacInBytes(), // TAC = 1
+			TAC: gnb.getTacInBytes(),
 			BroadcastPLMNList: []ies.BroadcastPLMNItem{
 				{
-					PLMNIdentity: gnb.getMccAndMncInOctets(), // MCC=208, MNC=93
+					PLMNIdentity: gnb.getMccAndMncInOctets(),
 					TAISliceSupportList: []ies.SliceSupportItem{
 						{
 							SNSSAI: ies.SNSSAI{
 								SST: []byte{0x01},             // SST = 1 (eMBB)
-								SD:  []byte{0x11, 0x22, 0x33}, // SD = 0x112233
+								SD:  []byte{0x11, 0x22, 0x33}, // SD = 0x11223
 							},
 						},
 					},

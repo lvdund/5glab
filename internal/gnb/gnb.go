@@ -2,7 +2,7 @@ package gnb
 
 import "log"
 
-type Gnb struct {
+type GNodeB struct {
 	GnbID uint32
 	PLMN  string
 	TAC   uint32
@@ -10,8 +10,8 @@ type Gnb struct {
 	Port  int
 }
 
-func NewGnbContext(gnbID, tac uint32, port int, plmn, ip string) *Gnb {
-	return &Gnb{
+func NewGnbContext(gnbID, tac uint32, port int, plmn, ip string) *GNodeB {
+	return &GNodeB{
 		GnbID: gnbID,
 		PLMN:  plmn,
 		TAC:   tac,
@@ -20,7 +20,7 @@ func NewGnbContext(gnbID, tac uint32, port int, plmn, ip string) *Gnb {
 	}
 }
 
-func (gnb *Gnb) getMccAndMncInOctets() []byte {
+func (gnb *GNodeB) getMccAndMncInOctets() []byte {
 	if len(gnb.PLMN) < 5 || len(gnb.PLMN) > 6 {
 		log.Fatalf("Invalid PLMN length: %s", gnb.PLMN)
 	}
@@ -45,12 +45,12 @@ func (gnb *Gnb) getMccAndMncInOctets() []byte {
 	}
 }
 
-func (gnb *Gnb) getGnbIdInBytes() []byte {
+func (gnb *GNodeB) getGnbIdInBytes() []byte {
 	return []byte{0x01, 0x02, 0x03}
 }
 
 // convert TAC -> 3 bytes
-func (gnb *Gnb) getTacInBytes() []byte {
+func (gnb *GNodeB) getTacInBytes() []byte {
 	return []byte{
 		byte((gnb.TAC >> 16) & 0xff),
 		byte((gnb.TAC >> 8) & 0xff),

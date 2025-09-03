@@ -7,4 +7,7 @@ require (
 	github.com/lvdund/ngap v1.4.13
 )
 
-require github.com/reogac/utils v1.0.0 // indirect
+require (
+	github.com/reogac/utils v1.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)

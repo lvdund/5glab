@@ -4,3 +4,6 @@ github.com/lvdund/ngap v1.4.13 h1:VAYGK0T085lrKCLlExipAK2Wd+LzwTqNgj2ZCwNjN+w=
 github.com/lvdund/ngap v1.4.13/go.mod h1:zoTbbMXZWrEMTFgwuhQ+kXDkXdUlCAPkJwGbi1GFfq0=
 github.com/reogac/utils v1.0.0 h1:fjjtOltRo/biNMzDfCPDKdKo4UzHB8AT1I60rqPCBjU=
 github.com/reogac/utils v1.0.0/go.mod h1:orVeEpycNZnCi9woKZaz/2At/kVUWHW2BIHw2m1pjBg=
+gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
+gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+gopkg.in/yaml.v3 v3.0.1/go.mod h1:K4uyk7z7BCEPqu6E+C64Yfv1cQ7kz7rIZviUmN+EgEM=
