@@ -1,20 +1,25 @@
 package main
 
 import (
+	ue_context "5g-emulator/internal/UE/context"
+	gnb_context "5g-emulator/internal/gNB/context"
+	gnb_handler "5g-emulator/internal/gNB/handler"
+	nas_builder "5g-emulator/pkg/nas"
+
 	"fmt"
 	"log"
 	"os"
-
-	"5g-emulator/internal/gNB/context"
-	"5g-emulator/internal/gNB/handler"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	AMF AMFConfig         `yaml:"amf"`
-	GNB context.GNBConfig `yaml:"gNB"`
+	AMF AMFConfig             `yaml:"amf"`
+	GNB gnb_context.GNBConfig `yaml:"gNB"`
+	UE  ue_context.UEConfig   `yaml:"ue"`
 }
+
 type AMFConfig struct {
 	Address string `yaml:"address"`
 }
@@ -34,23 +39,40 @@ func loadConfig() (*Config, error) {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	log.Println("INFO: --- gNB Emulator Starting Up ---")
+	log.Println("INFO: --- Emulator Orchestrator Starting Up ---")
+
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatalf("FATAL: %v", err)
 	}
-	log.Printf("INFO: Configuration loaded for gNB Name: '%s'", cfg.GNB.GNBName)
-	conn, err := handler.ConnectToAMF(cfg.AMF.Address)
+
+	conn, err := gnb_handler.ConnectToAMF(cfg.AMF.Address)
 	if err != nil {
 		log.Fatalf("FATAL: %v", err)
 	}
 	defer conn.Close()
-	gnbCtx := context.NewGNBContext(&cfg.GNB, conn)
-	amfName, err := handler.PerformNGSetup(gnbCtx)
+
+	gnbCtx := gnb_context.NewGNBContext(&cfg.GNB, conn)
+	_, err = gnb_handler.PerformNGSetup(gnbCtx)
 	if err != nil {
 		log.Fatalf("FATAL: NG Setup procedure failed: %v", err)
 	}
-	log.Printf("SUCCESS: NG Setup complete. Connected to AMF: '%s'", amfName)
-	log.Println("INFO: gNB is now operational. Idling to keep connection alive...")
+	log.Println("SUCCESS: gNB is operational.")
+	time.Sleep(1 * time.Second)
+
+	ueCtx := ue_context.NewUEContext(&cfg.UE)
+	gnbCtx.SetUEContext(ueCtx)
+
+	nasPDU, err := nas_builder.BuildRegistrationRequest(&cfg.UE)
+	if err != nil {
+		log.Fatalf("FATAL: [UE] Failed to build NAS message: %v", err)
+	}
+
+	err = gnb_handler.HandleInitialUEMessage(gnbCtx, nasPDU)
+	if err != nil {
+		log.Fatalf("FATAL: [gNB] Failed to send Initial UE Message: %v", err)
+	}
+
+	log.Println("INFO: --- [Step 4] Waiting for AMF to respond (e.g., Authentication Request) ---")
 	select {}
 }

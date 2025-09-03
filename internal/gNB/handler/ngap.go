@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -88,7 +90,7 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 	log.Println("INFO: NG Setup Request sent successfully.")
 
 	log.Println("INFO: --- [Step 2] Waiting for NG Setup Response ---")
-	// --- ... ---
+
 	readBuffer := make([]byte, 8192)
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	n, _, err := conn.SCTPRead(readBuffer)
@@ -116,4 +118,65 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 	log.Printf("INFO: Received NG Setup Response. AMF Name: '%s', Relative Capacity: %d", amfName, relativeCapacity)
 
 	return string(amfName), nil
+}
+
+func HandleInitialUEMessage(gnbCtx *context.GNBContext, nasPDU []byte) error {
+	log.Println("INFO: --- [gNB - Step 3b] Building and Sending Initial UE Message ---")
+
+	plmnIdStruct := utils.PlmnId{Mcc: gnbCtx.Config.MCC, Mnc: gnbCtx.Config.MNC}
+	plmnIDBytes := utils.PlmnIdToNgap(plmnIdStruct)
+
+	gnbIDBytes, err := hex.DecodeString(gnbCtx.Config.GNBID)
+	if err != nil {
+		return fmt.Errorf("could not convert gNB ID for location info: %w", err)
+	}
+
+	tacString := fmt.Sprintf("%06x", gnbCtx.Config.TAC)
+	taiStruct := utils.Tai{PlmnId: &plmnIdStruct, Tac: tacString}
+	taiNgap := utils.TaiToNgap(taiStruct)
+	tacBytes := taiNgap.TAC
+
+	initialUEMessage := ies.InitialUEMessage{
+		RANUENGAPID: gnbCtx.RanUeNgapID,
+		NASPDU:      nasPDU,
+
+		UserLocationInformation: ies.UserLocationInformation{
+			Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
+			UserLocationInformationNR: &ies.UserLocationInformationNR{
+				NRCGI: ies.NRCGI{
+					PLMNIdentity: plmnIDBytes,
+					NRCellIdentity: aper.BitString{
+						Bytes:   append(gnbIDBytes, 0x0, 0x0),
+						NumBits: 36,
+					},
+				},
+				TAI: ies.TAI{
+					PLMNIdentity: plmnIDBytes,
+					TAC:          tacBytes,
+				},
+			},
+		},
+
+		RRCEstablishmentCause: ies.RRCEstablishmentCause{Value: ies.RRCEstablishmentCauseMosignalling},
+		UEContextRequest:      &ies.UEContextRequest{Value: ies.UEContextRequestRequested},
+	}
+
+	var buffer bytes.Buffer
+	err = initialUEMessage.Encode(&buffer)
+	if err != nil {
+		return fmt.Errorf("failed to encode Initial UE Message: %w", err)
+	}
+	encodedPDU := buffer.Bytes()
+
+	info := &sctp.SndRcvInfo{
+		Stream: 0,
+		PPID:   60,
+	}
+	_, err = gnbCtx.SCTPConn.SCTPWrite(encodedPDU, info)
+	if err != nil {
+		return fmt.Errorf("failed to send Initial UE Message over SCTP: %w", err)
+	}
+
+	log.Println("INFO: Initial UE Message sent successfully.")
+	return nil
 }

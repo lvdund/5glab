@@ -22,7 +22,7 @@ func ConnectToAMF(amfAddress string) (*sctp.SCTPConn, error) {
 		conn.Close()
 		return nil, fmt.Errorf("failed to get default SCTP parameters: %w", err)
 	}
-	info.PPID = 60 // NGAP PPID
+	info.PPID = 60
 	err = conn.SetDefaultSentParam(info)
 	if err != nil {
 		conn.Close()

@@ -6,9 +6,14 @@ gNB:
   mnc: "01"
   tac: 1
   gnbId: "000001"
-  gnbName: "gnb-01"
+  gnbName: "legion-gnb-01"
 
-UE:
-  imsi: "208930000000001"
+
+ue:
+  
+  imsi: "001010000000001"
+  
+  
   key: "8baf473f2f8fd09487cccbd7097c6862"
-  resStar: "00112233445566778899aabbccddeeff"
+  opc: "8e27b6af0e692e750f32667a3b14605d"
+  amf: "8000"

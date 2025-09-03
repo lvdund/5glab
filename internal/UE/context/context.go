@@ -1,7 +1,7 @@
 package context
 
 import (
-	"github.com/free5gc/nas/nasType" //will change to reogac/nas later
+	"github.com/reogac/nas"
 )
 
 type RegistrationState int
@@ -20,7 +20,7 @@ type UEConfig struct {
 }
 
 type UESecurityContext struct {
-	NgKSI            nasType.NoncurrentNativeNASKeySetIdentifier
+	NgKSI            nas.KeySetIdentifier
 	K_AMF            []byte
 	K_NAS_int        []byte
 	K_NAS_enc        []byte
@@ -31,25 +31,22 @@ type UESecurityContext struct {
 type UEContext struct {
 	Config           *UEConfig
 	State            RegistrationState
-	GUTI             *nasType.GUTI5G
-	RegistrationArea []nasType.LastVisitedRegisteredTAI
+	GUTI             *nas.Guti
+	RegistrationArea []nas.TrackingAreaIdentity
 	SecurityContext  UESecurityContext
 }
 
 func NewUEContext(cfg *UEConfig) *UEContext {
-	ueCtx := &UEContext{
+	return &UEContext{
 		Config: cfg,
 		State:  Deregistered,
 		SecurityContext: UESecurityContext{
+			NgKSI: nas.KeySetIdentifier{
+				Tsc: 0,
+				Id:  7,
+			},
 			UplinkNASCount:   0,
 			DownlinkNASCount: 0,
 		},
 	}
-
-	ksi := nasType.NewNoncurrentNativeNASKeySetIdentifier(0)
-	ksi.SetTsc(0)
-	ksi.SetNasKeySetIdentifiler(7)
-	ueCtx.SecurityContext.NgKSI = *ksi
-
-	return ueCtx
 }
