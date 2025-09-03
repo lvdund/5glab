@@ -1,4 +1,4 @@
-package main
+package sctpngap
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/lvdund/ngap/ies"
 )
 
-func sctpListen(conn *sctp.SCTPConn) {
+func SctpListen(conn *sctp.SCTPConn) {
 	for {
 		buf := make([]byte, 4096)
 		n, err := conn.Read(buf)
@@ -68,7 +68,7 @@ func handleNgap(ngapPduMsg ngap.NgapPdu) {
 	}
 }
 
-func sctpWrite(pdu []byte, conn *sctp.SCTPConn) {
+func SctpWrite(pdu []byte, conn *sctp.SCTPConn) {
 	info := &sctp.SndRcvInfo{
 		Stream: uint16(0),
 		PPID:   uint32(60),

@@ -8,6 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/Phuc12012005/emulator/internal/gnb"
+	"github.com/Phuc12012005/emulator/internal/sctpngap"
 	"github.com/ishidawataru/sctp"
 )
 
@@ -21,15 +23,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}
-	go sctpListen(conn) // keep connection to amf
+	go sctpngap.SctpListen(conn) // keep connection to amf
 	fmt.Println("Gnb established connection to the AMF")
 
-	msg := getNgSetupRequest() // create NG Setup Request
+	gnb := gnb.Gnb{}
+
+	msg := gnb.GetNgSetupRequest() // create NG Setup Request
 	if msg == nil {
 		log.Fatalf("Failed to encode")
 		return
 	}
-	sctpWrite(msg, conn) // send ngap msg to AMF
+	sctpngap.SctpWrite(msg, conn) // send ngap msg to AMF
 
 	// Wait for interrupt signal: Ctrl+C to exit
 	c := make(chan os.Signal, 1)
@@ -37,4 +41,5 @@ func main() {
 	<-c
 
 	conn.Close()
+
 }

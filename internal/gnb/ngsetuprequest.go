@@ -1,4 +1,4 @@
-package main
+package gnb
 
 import (
 	"log"
@@ -8,16 +8,16 @@ import (
 	"github.com/lvdund/ngap/ies"
 )
 
-func getNgSetupRequest() []byte {
+func (gnb *Gnb) GetNgSetupRequest() []byte {
 	msg := ies.NGSetupRequest{}
 	msg.GlobalRANNodeID = ies.GlobalRANNodeID{
 		Choice: ies.GlobalRANNodeIDPresentGlobalgnbId,
 		GlobalGNBID: &ies.GlobalGNBID{
-			PLMNIdentity: []byte{0x02, 0xF8, 0x39}, // MCC=208, MNC=93 (Free5GC default),
+			PLMNIdentity: gnb.getMccAndMncInOctets(),
 			GNBID: ies.GNBID{
 				Choice: ies.GNBIDPresentGnbId,
 				GNBID: &aper.BitString{
-					Bytes:   []byte{0x00, 0x01, 0x02}, // Example gNB ID: 0x00010203
+					Bytes:   gnb.getGnbIdInBytes(), // Example gNB ID: 0x00010203
 					NumBits: 24,
 				},
 			},
@@ -25,10 +25,10 @@ func getNgSetupRequest() []byte {
 	}
 	msg.SupportedTAList = []ies.SupportedTAItem{
 		{
-			TAC: []byte{0x00, 0x00, 0x01}, // TAC = 1
+			TAC: gnb.getTacInBytes(), // TAC = 1
 			BroadcastPLMNList: []ies.BroadcastPLMNItem{
 				{
-					PLMNIdentity: []byte{0x02, 0xF8, 0x39}, // MCC=208, MNC=93
+					PLMNIdentity: gnb.getMccAndMncInOctets(), // MCC=208, MNC=93
 					TAISliceSupportList: []ies.SliceSupportItem{
 						{
 							SNSSAI: ies.SNSSAI{
