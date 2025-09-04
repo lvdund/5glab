@@ -10,7 +10,7 @@ type GNodeB struct {
 	Port  int
 }
 
-func NewGnbContext(gnbID, tac uint32, port int, plmn, ip string) *GNodeB {
+func NewGNodeB(gnbID, tac uint32, port int, plmn, ip string) *GNodeB {
 	return &GNodeB{
 		GnbID: gnbID,
 		PLMN:  plmn,

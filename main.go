@@ -10,6 +10,7 @@ import (
 
 	"github.com/Phuc12012005/emulator/internal/gnb"
 	"github.com/Phuc12012005/emulator/internal/sctpngap"
+	"github.com/Phuc12012005/emulator/internal/ue"
 	"github.com/Phuc12012005/emulator/pkg/config"
 	"github.com/ishidawataru/sctp"
 )
@@ -31,13 +32,7 @@ func main() {
 	go sctpngap.SctpListen(conn) // keep connection to amf
 	fmt.Println("Gnb established connection to the AMF")
 
-	gnb := &gnb.GNodeB{
-		GnbID: cfg.GNB.GNBID,
-		PLMN:  cfg.UE.PLMN,
-		TAC:   cfg.GNB.TAC,
-		IP:    cfg.GNB.IP,
-		Port:  cfg.GNB.Port,
-	}
+	gnb := gnb.NewGNodeB(cfg.GNB.GNBID, cfg.GNB.TAC, cfg.GNB.Port, cfg.UE.PLMN, cfg.GNB.IP)
 
 	msg := gnb.GetNgSetupRequest() // create NG Setup Request
 	if msg == nil {
@@ -46,6 +41,9 @@ func main() {
 	}
 	sctpngap.SctpWrite(msg, conn) // send ngap msg to AMF
 
+	ue := ue.NewUserEquipment(cfg.UE.SUPI, cfg.UE.PLMN, cfg.GNB.RanUeNgapStart)
+	_, nasBuf, err := ue.BuildRegistrantionUeMsg()
+	go ue.HandleNasPdu(nasBuf)
 	// Wait for interrupt signal: Ctrl+C to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
