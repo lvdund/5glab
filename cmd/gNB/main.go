@@ -1,11 +1,11 @@
 package main
 
 import (
+	nas_builder "5g-emulator/pkg/nas"
+
 	ue_context "5g-emulator/internal/UE/context"
 	gnb_context "5g-emulator/internal/gNB/context"
 	gnb_handler "5g-emulator/internal/gNB/handler"
-	nas_builder "5g-emulator/pkg/nas"
-
 	"fmt"
 	"log"
 	"os"
@@ -62,17 +62,25 @@ func main() {
 
 	ueCtx := ue_context.NewUEContext(&cfg.UE)
 	gnbCtx.SetUEContext(ueCtx)
-
 	nasPDU, err := nas_builder.BuildRegistrationRequest(&cfg.UE)
 	if err != nil {
 		log.Fatalf("FATAL: [UE] Failed to build NAS message: %v", err)
 	}
-
 	err = gnb_handler.HandleInitialUEMessage(gnbCtx, nasPDU)
 	if err != nil {
 		log.Fatalf("FATAL: [gNB] Failed to send Initial UE Message: %v", err)
 	}
 
-	log.Println("INFO: --- [Step 4] Waiting for AMF to respond (e.g., Authentication Request) ---")
+	go gnb_handler.ListenForMessages(gnbCtx)
+
+	go func(ue *ue_context.UEContext, dlChan chan []byte) {
+		log.Println("INFO: [UE] Starting Downlink NAS message listener...")
+
+		nasFromGNB := <-dlChan
+		log.Println("INFO: [UE] Received NAS message from gNB.")
+		nas_builder.HandleNASMessage(ue, nasFromGNB)
+	}(ueCtx, gnbCtx.DownlinkChan)
+
+	log.Println("INFO: --- [Step 4] Now actively listening for all messages ---")
 	select {}
 }

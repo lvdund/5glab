@@ -180,3 +180,57 @@ func HandleInitialUEMessage(gnbCtx *context.GNBContext, nasPDU []byte) error {
 	log.Println("INFO: Initial UE Message sent successfully.")
 	return nil
 }
+
+func ListenForMessages(gnbCtx *context.GNBContext) {
+	conn := gnbCtx.SCTPConn
+	buffer := make([]byte, 8192)
+
+	log.Println("INFO: gNB is now listening for incoming NGAP messages...")
+
+	for {
+		n, _, err := conn.SCTPRead(buffer)
+		if err != nil {
+
+			log.Printf("ERROR: Failed to read from SCTP connection: %v. Exiting listener.", err)
+			return
+		}
+
+		pdu, err, _ := ngap.NgapDecode(buffer[:n])
+		if err != nil {
+			log.Printf("ERROR: Failed to decode NGAP message: %v", err)
+			continue
+		}
+
+		switch pdu.Present {
+		case ies.NgapPduInitiatingMessage:
+			procCode := pdu.Message.ProcedureCode.Value
+
+			switch procCode {
+			case ies.ProcedureCode_DownlinkNASTransport:
+				log.Println("INFO: --- [Step 4] Received Downlink NAS Transport from AMF ---")
+
+				downlinkNasTransport, ok := pdu.Message.Msg.(*ies.DownlinkNASTransport)
+				if !ok {
+					log.Println("ERROR: Could not type assert to DownlinkNASTransport.")
+					continue
+				}
+
+				nasPDU := downlinkNasTransport.NASPDU
+				log.Printf("INFO: Extracted NAS PDU, forwarding to UE (length: %d bytes)", len(nasPDU))
+
+				gnbCtx.DownlinkChan <- nasPDU
+
+			default:
+				log.Printf("WARN: Received unhandled Initiating Message (Procedure Code: %d)", procCode)
+			}
+
+		case ies.NgapPduSuccessfulOutcome:
+			procCode := pdu.Message.ProcedureCode.Value
+			log.Printf("INFO: Received Successful Outcome (Procedure Code: %d)", procCode)
+
+		case ies.NgapPduUnsuccessfulOutcome:
+			procCode := pdu.Message.ProcedureCode.Value
+			log.Printf("INFO: Received Unsuccessful Outcome (Procedure Code: %d)", procCode)
+		}
+	}
+}

@@ -15,18 +15,20 @@ type GNBConfig struct {
 }
 
 type GNBContext struct {
-	Config      *GNBConfig
-	SCTPConn    *sctp.SCTPConn
-	UEContext   *ue_context.UEContext
-	AmfUeNgapID int64
-	RanUeNgapID int64
+	Config       *GNBConfig
+	SCTPConn     *sctp.SCTPConn
+	UEContext    *ue_context.UEContext
+	AmfUeNgapID  int64
+	RanUeNgapID  int64
+	DownlinkChan chan []byte
 }
 
 func NewGNBContext(cfg *GNBConfig, conn *sctp.SCTPConn) *GNBContext {
 	return &GNBContext{
-		Config:      cfg,
-		SCTPConn:    conn,
-		RanUeNgapID: 1,
+		Config:       cfg,
+		SCTPConn:     conn,
+		RanUeNgapID:  1,
+		DownlinkChan: make(chan []byte, 10),
 	}
 }
 

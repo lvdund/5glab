@@ -49,3 +49,25 @@ func BuildRegistrationRequest(ueCtx *context.UEConfig) ([]byte, error) {
 	log.Println("INFO: NAS Registration Request built successfully.")
 	return data, nil
 }
+
+func HandleNASMessage(ueCtx *context.UEContext, pdu []byte) {
+
+	nasCtx := nas.NewNasContext(false)
+	nasMsg, err := nas.Decode(nasCtx, pdu, false)
+	if err != nil {
+		log.Printf("ERROR: [UE] Failed to decode NAS message: %v", err)
+		return
+	}
+
+	if nasMsg.Gmm != nil {
+		switch nasMsg.Gmm.MsgType {
+		case nas.AuthenticationRequestMsgType:
+			log.Println("SUCCESS: [UE] Received Authentication Request!")
+
+		default:
+			log.Printf("WARN: [UE] Received unhandled GMM message type: 0x%02x", nasMsg.Gmm.MsgType)
+		}
+	} else {
+		log.Println("WARN: [UE] Received a NAS message with no GMM content.")
+	}
+}
