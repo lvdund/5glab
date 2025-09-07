@@ -1,4 +1,4 @@
-package gnb
+package ue
 
 import (
 	"fmt"
@@ -7,7 +7,12 @@ import (
 	"github.com/reogac/nas"
 )
 
-// msg *ies.DownlinkNASTransport
+const (
+	AUTH_SUCCESS uint8 = iota
+	AUTH_MAC_FAILURE
+	AUTH_SYNC_FAILURE
+)
+
 // HandleNasPdu parse NAS PDU
 func HandleNasPdu(msg *ies.DownlinkNASTransport) {
 	pdu := msg.NASPDU
