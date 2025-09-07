@@ -1,19 +1,20 @@
-package ue
+package gnb
 
 import (
 	"fmt"
 
+	"github.com/lvdund/ngap/ies"
 	"github.com/reogac/nas"
 )
 
+// msg *ies.DownlinkNASTransport
 // HandleNasPdu parse NAS PDU
-func (ue *UserEquipment) HandleNasPdu(pdu []byte) {
+func HandleNasPdu(msg *ies.DownlinkNASTransport) {
+	pdu := msg.NASPDU
 	if len(pdu) == 0 {
 		fmt.Println("NAS PDU empty")
 		return
 	}
-
-	fmt.Printf("NAS PDU raw: % X\n", pdu)
 
 	// Decode NAS message
 	nasCtx := nas.NewNasContext(false)

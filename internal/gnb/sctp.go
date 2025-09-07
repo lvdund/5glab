@@ -41,6 +41,9 @@ func handleNgap(ngapPduMsg ngap.NgapPdu, conn *sctp.SCTPConn) {
 
 		case ies.ProcedureCode_DownlinkNASTransport:
 			fmt.Printf("Receive Downlink NAS Transport\n")
+			innerMsg := ngapPduMsg.Message.Msg.(*ies.DownlinkNASTransport)
+			HandleNasPdu(innerMsg)
+
 		default:
 			fmt.Printf("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
 		}
