@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	gnbf "github.com/Phuc12012005/emulator/internal/gnb"
-	"github.com/Phuc12012005/emulator/internal/sctpngap"
 	"github.com/Phuc12012005/emulator/pkg/config"
 	"github.com/ishidawataru/sctp"
 )
@@ -28,7 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to dial: %v", err)
 	}
-	go sctpngap.SctpListen(conn) // keep connection to amf
+	go gnbf.SctpListen(conn) // keep connection to amf
 	fmt.Println("Gnb established connection to the AMF")
 
 	gnb := gnbf.NewGNodeB(cfg.GNB.GNBID, cfg.GNB.TAC, cfg.GNB.Port, cfg.UE.PLMN, cfg.GNB.IP)
@@ -38,7 +37,7 @@ func main() {
 		log.Fatalf("Failed to encode")
 		return
 	}
-	sctpngap.SctpWrite(msg, conn) // send ngap msg to AMF
+	gnbf.SctpWrite(msg, conn) // send ngap msg to AMF
 	// Wait for interrupt signal: Ctrl+C to exit
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

@@ -7,6 +7,7 @@ import (
 	"github.com/lvdund/ngap"
 	"github.com/lvdund/ngap/aper"
 	"github.com/lvdund/ngap/ies"
+	"github.com/lvdund/ngap/utils"
 	"github.com/reogac/nas"
 )
 
@@ -17,9 +18,10 @@ func BuildRegistrationRequest(ue *ue.UserEquipment) ([]byte, error) {
 			Tsc: 1,
 			Id:  1,
 		},
-		MobileIdentity: ue.Suci,
+		MobileIdentity:       ue.Suci,
+		UeSecurityCapability: ue.SecCap,
 	}
-	rr.SetSecurityHeader(0)
+	rr.SetSecurityHeader(nas.NasSecNone)
 	buf, err := nas.EncodeMm(nil, rr, true)
 	if err != nil {
 		log.Fatalln("encode rr failed", err)
@@ -29,14 +31,12 @@ func BuildRegistrationRequest(ue *ue.UserEquipment) ([]byte, error) {
 func BuildInitialUeMessage(nasPdu []byte) ([]byte, error) {
 	msg := ies.InitialUEMessage{}
 
-	msg.RANUENGAPID = 1000
+	msg.RANUENGAPID = 1
 
 	// Attach the NAS Registration Request
 	msg.NASPDU = nasPdu
-
-	// PLMN = MCC 001 / MNC 01 → octets 0x00 0xF1
-	plmnid := []byte{0x21, 0xF8, 0x39}
-	//plmnidTai := []byte{0x00, 0xF1}
+	plmnid := utils.PlmnIdToNgap(utils.PlmnId{Mcc: "208", Mnc: "93"})
+	//plmnidTai := []byte{0x21, 0xF8, 0x39}
 
 	// NR Cell Identity (36 bits, padded to 5 bytes)
 	// Example: CellID = 0x12345
@@ -44,8 +44,6 @@ func BuildInitialUeMessage(nasPdu []byte) ([]byte, error) {
 		Bytes:   []byte{0x00, 0x12, 0x34, 0x56, 0x00},
 		NumBits: 36,
 	}
-
-	// TAC = 1 → 0x0001
 	tac := []byte{0x00, 0x00, 0x01}
 
 	// User Location Info (NR)

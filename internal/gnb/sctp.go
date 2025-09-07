@@ -1,10 +1,9 @@
-package sctpngap
+package gnb
 
 import (
 	"fmt"
 	"log"
 
-	gnbf "github.com/Phuc12012005/emulator/internal/gnb"
 	"github.com/Phuc12012005/emulator/internal/ue"
 	"github.com/ishidawataru/sctp"
 	"github.com/lvdund/ngap"
@@ -41,7 +40,7 @@ func handleNgap(ngapPduMsg ngap.NgapPdu, conn *sctp.SCTPConn) {
 		switch ngapPduMsg.Message.ProcedureCode.Value {
 
 		case ies.ProcedureCode_DownlinkNASTransport:
-			fmt.Printf("Receive Downlink NAS Transport")
+			fmt.Printf("Receive Downlink NAS Transport\n")
 		default:
 			fmt.Printf("Received unknown NGAP message 0x%x", ngapPduMsg.Message.ProcedureCode.Value)
 		}
@@ -52,20 +51,19 @@ func handleNgap(ngapPduMsg ngap.NgapPdu, conn *sctp.SCTPConn) {
 
 		case ies.ProcedureCode_NGSetup:
 			fmt.Println("Receive NG Setup Response")
-			fmt.Println("Receive NG Setup Response")
 
 			// Create UE
 			ueCtx := ue.NewUserEquipment("imsi-208930000000001", "20893", 1, "208", "93")
 
 			// Build NAS Registration Request
-			nasPdu, err := gnbf.BuildRegistrationRequest(ueCtx)
+			nasPdu, err := BuildRegistrationRequest(ueCtx)
 			if err != nil {
 				fmt.Println("Failed to build NAS Registration Request:", err)
 				return
 			}
 
 			// Wrap in InitialUEMessage
-			initialUeMsg, err := gnbf.BuildInitialUeMessage(nasPdu)
+			initialUeMsg, err := BuildInitialUeMessage(nasPdu)
 			if err != nil {
 				fmt.Println("Failed to build InitialUEMessage:", err)
 				return
