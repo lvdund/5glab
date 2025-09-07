@@ -3,6 +3,8 @@ package context
 import (
 	ue_context "5g-emulator/internal/UE/context"
 
+	"5g-emulator/internal/radio"
+
 	"github.com/ishidawataru/sctp"
 )
 
@@ -21,14 +23,15 @@ type GNBContext struct {
 	AmfUeNgapID  int64
 	RanUeNgapID  int64
 	DownlinkChan chan []byte
+	Radio        *radio.RadioLink
 }
 
-func NewGNBContext(cfg *GNBConfig, conn *sctp.SCTPConn) *GNBContext {
+func NewGNBContext(cfg *GNBConfig, conn *sctp.SCTPConn, radioLink *radio.RadioLink) *GNBContext {
 	return &GNBContext{
-		Config:       cfg,
-		SCTPConn:     conn,
-		RanUeNgapID:  1,
-		DownlinkChan: make(chan []byte, 10),
+		Config:      cfg,
+		SCTPConn:    conn,
+		RanUeNgapID: 1,
+		Radio:       radioLink,
 	}
 }
 

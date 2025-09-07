@@ -8,9 +8,9 @@ gNB:
   gnbId: "000001"
   gnbName: "legion-gnb-01"
 
-
 ue:
-  imsi: "001010000000001"
-  key: "8baf473f2f8fd09487cccbd7097c6862"
-  opc: "e834f022233f8a2f558d2454a8561b31"
+  
+  imsi: "001013683465133"
+  key: "eafbdb3f42a27b59034d0ad60fd9f6d9"
+  opc: "b34a71e62e131f36bbbb33d9f31316d1"
   amf: "8000"

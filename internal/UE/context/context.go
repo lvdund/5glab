@@ -1,6 +1,8 @@
 package context
 
 import (
+	"5g-emulator/internal/radio"
+
 	"github.com/reogac/nas"
 )
 
@@ -26,6 +28,9 @@ type UESecurityContext struct {
 	K_NAS_enc        []byte
 	UplinkNASCount   uint32
 	DownlinkNASCount uint32
+	CK               []byte
+	IK               []byte
+	AK               []byte
 }
 
 type UEContext struct {
@@ -34,12 +39,14 @@ type UEContext struct {
 	GUTI             *nas.Guti
 	RegistrationArea []nas.TrackingAreaIdentity
 	SecurityContext  UESecurityContext
+	Radio            *radio.RadioLink
 }
 
-func NewUEContext(cfg *UEConfig) *UEContext {
+func NewUEContext(cfg *UEConfig, radioLink *radio.RadioLink) *UEContext {
 	return &UEContext{
 		Config: cfg,
 		State:  Deregistered,
+		Radio:  radioLink,
 		SecurityContext: UESecurityContext{
 			NgKSI: nas.KeySetIdentifier{
 				Tsc: 0,

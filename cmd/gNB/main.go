@@ -1,11 +1,12 @@
 package main
 
 import (
-	nas_builder "5g-emulator/pkg/nas"
-
 	ue_context "5g-emulator/internal/UE/context"
+	ue_handler "5g-emulator/internal/UE/handler"
 	gnb_context "5g-emulator/internal/gNB/context"
 	gnb_handler "5g-emulator/internal/gNB/handler"
+	"5g-emulator/internal/radio"
+
 	"fmt"
 	"log"
 	"os"
@@ -46,13 +47,15 @@ func main() {
 		log.Fatalf("FATAL: %v", err)
 	}
 
+	radioLink := radio.NewRadioLink()
+
 	conn, err := gnb_handler.ConnectToAMF(cfg.AMF.Address)
 	if err != nil {
 		log.Fatalf("FATAL: %v", err)
 	}
 	defer conn.Close()
 
-	gnbCtx := gnb_context.NewGNBContext(&cfg.GNB, conn)
+	gnbCtx := gnb_context.NewGNBContext(&cfg.GNB, conn, radioLink)
 	_, err = gnb_handler.PerformNGSetup(gnbCtx)
 	if err != nil {
 		log.Fatalf("FATAL: NG Setup procedure failed: %v", err)
@@ -60,9 +63,10 @@ func main() {
 	log.Println("SUCCESS: gNB is operational.")
 	time.Sleep(1 * time.Second)
 
-	ueCtx := ue_context.NewUEContext(&cfg.UE)
+	ueCtx := ue_context.NewUEContext(&cfg.UE, radioLink)
 	gnbCtx.SetUEContext(ueCtx)
-	nasPDU, err := nas_builder.BuildRegistrationRequest(&cfg.UE)
+
+	nasPDU, err := ue_handler.BuildRegistrationRequest(ueCtx)
 	if err != nil {
 		log.Fatalf("FATAL: [UE] Failed to build NAS message: %v", err)
 	}
@@ -72,14 +76,7 @@ func main() {
 	}
 
 	go gnb_handler.ListenForMessages(gnbCtx)
-
-	go func(ue *ue_context.UEContext, dlChan chan []byte) {
-		log.Println("INFO: [UE] Starting Downlink NAS message listener...")
-
-		nasFromGNB := <-dlChan
-		log.Println("INFO: [UE] Received NAS message from gNB.")
-		nas_builder.HandleNASMessage(ue, nasFromGNB)
-	}(ueCtx, gnbCtx.DownlinkChan)
+	go ue_handler.ListenForDownlink(ueCtx)
 
 	log.Println("INFO: --- [Step 4] Now actively listening for all messages ---")
 	select {}

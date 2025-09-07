@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"5g-emulator/internal/gNB/context"
+	"5g-emulator/pkg/logger"
 
 	"github.com/ishidawataru/sctp"
 	"github.com/lvdund/ngap"
@@ -79,6 +80,8 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 		return "", fmt.Errorf("failed to encode NG Setup Request: %w", err)
 	}
 
+	logger.LogMessageContent("gNB -> AMF: NGAP NGSetupRequest", &ngSetupRequest)
+
 	info := &sctp.SndRcvInfo{
 		Stream: 0,
 		PPID:   60,
@@ -107,6 +110,8 @@ func PerformNGSetup(gnbCtx *context.GNBContext) (string, error) {
 	if response.Present != ies.NgapPduSuccessfulOutcome {
 		return "", fmt.Errorf("NG Setup procedure was rejected by AMF")
 	}
+
+	logger.LogMessageContent("AMF -> gNB: NGAP NGSetupResponse", response.Message.Msg)
 
 	ngSetupResponse, ok := response.Message.Msg.(*ies.NGSetupResponse)
 	if !ok || ngSetupResponse == nil {
@@ -166,7 +171,9 @@ func HandleInitialUEMessage(gnbCtx *context.GNBContext, nasPDU []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode Initial UE Message: %w", err)
 	}
+
 	encodedPDU := buffer.Bytes()
+	logger.LogMessageContent("gNB -> AMF: NGAP InitialUEMessage", &initialUEMessage)
 
 	info := &sctp.SndRcvInfo{
 		Stream: 0,
@@ -182,55 +189,123 @@ func HandleInitialUEMessage(gnbCtx *context.GNBContext, nasPDU []byte) error {
 }
 
 func ListenForMessages(gnbCtx *context.GNBContext) {
-	conn := gnbCtx.SCTPConn
-	buffer := make([]byte, 8192)
+	log.Println("INFO: [gNB] Starting bidirectional message listener...")
 
-	log.Println("INFO: gNB is now listening for incoming NGAP messages...")
+	sctpReadChan := make(chan []byte, 10)
+
+	go func(conn *sctp.SCTPConn, ch chan<- []byte) {
+		buffer := make([]byte, 8192)
+		for {
+			n, _, err := conn.SCTPRead(buffer)
+			if err != nil {
+				log.Printf("ERROR: [SCTP Listener] Failed to read from SCTP: %v. Closing listener.", err)
+				close(ch)
+				return
+			}
+			data := make([]byte, n)
+			copy(data, buffer[:n])
+			ch <- data
+		}
+	}(gnbCtx.SCTPConn, sctpReadChan)
 
 	for {
-		n, _, err := conn.SCTPRead(buffer)
-		if err != nil {
+		select {
+		case amfData, ok := <-sctpReadChan:
+			if !ok {
+				log.Println("ERROR: [gNB] SCTP channel was closed. Terminating.")
+				return
+			}
 
-			log.Printf("ERROR: Failed to read from SCTP connection: %v. Exiting listener.", err)
-			return
-		}
+			pdu, err, _ := ngap.NgapDecode(amfData)
+			if err != nil {
+				log.Printf("ERROR: [gNB] Failed to decode NGAP message from AMF: %v", err)
+				continue
+			}
 
-		pdu, err, _ := ngap.NgapDecode(buffer[:n])
-		if err != nil {
-			log.Printf("ERROR: Failed to decode NGAP message: %v", err)
-			continue
-		}
+			if pdu.Present == ies.NgapPduInitiatingMessage &&
+				pdu.Message.ProcedureCode.Value == ies.ProcedureCode_DownlinkNASTransport {
 
-		switch pdu.Present {
-		case ies.NgapPduInitiatingMessage:
-			procCode := pdu.Message.ProcedureCode.Value
-
-			switch procCode {
-			case ies.ProcedureCode_DownlinkNASTransport:
 				log.Println("INFO: --- [Step 4] Received Downlink NAS Transport from AMF ---")
 
 				downlinkNasTransport, ok := pdu.Message.Msg.(*ies.DownlinkNASTransport)
 				if !ok {
-					log.Println("ERROR: Could not type assert to DownlinkNASTransport.")
+					log.Println("ERROR: [gNB] Could not type assert to DownlinkNASTransport.")
 					continue
 				}
 
-				nasPDU := downlinkNasTransport.NASPDU
-				log.Printf("INFO: Extracted NAS PDU, forwarding to UE (length: %d bytes)", len(nasPDU))
+				gnbCtx.AmfUeNgapID = downlinkNasTransport.AMFUENGAPID
+				log.Printf("INFO: [gNB] Learned AMF UE NGAP ID: %d", gnbCtx.AmfUeNgapID)
 
-				gnbCtx.DownlinkChan <- nasPDU
-
-			default:
-				log.Printf("WARN: Received unhandled Initiating Message (Procedure Code: %d)", procCode)
+				gnbCtx.Radio.DownlinkChan <- downlinkNasTransport.NASPDU
+			} else {
+				log.Printf("WARN: [gNB] Received unhandled message from AMF (Present: %d, ProcCode: %d)",
+					pdu.Present, pdu.Message.ProcedureCode.Value)
 			}
 
-		case ies.NgapPduSuccessfulOutcome:
-			procCode := pdu.Message.ProcedureCode.Value
-			log.Printf("INFO: Received Successful Outcome (Procedure Code: %d)", procCode)
-
-		case ies.NgapPduUnsuccessfulOutcome:
-			procCode := pdu.Message.ProcedureCode.Value
-			log.Printf("INFO: Received Unsuccessful Outcome (Procedure Code: %d)", procCode)
+		case nasPDU := <-gnbCtx.Radio.UplinkChan:
+			log.Println("INFO: --- [Step 5b] Received NAS message from UE, forwarding to AMF ---")
+			err := HandleUplinkNasTransport(gnbCtx, nasPDU)
+			if err != nil {
+				log.Printf("ERROR: [gNB] Failed to send Uplink NAS Transport: %v", err)
+			}
 		}
 	}
+}
+
+func HandleUplinkNasTransport(gnbCtx *context.GNBContext, nasPDU []byte) error {
+	log.Println("INFO: --- [gNB] Building Uplink NAS Transport ---")
+
+	plmnIdStruct := utils.PlmnId{Mcc: gnbCtx.Config.MCC, Mnc: gnbCtx.Config.MNC}
+	plmnIDBytes := utils.PlmnIdToNgap(plmnIdStruct)
+
+	gnbIDBytes, err := hex.DecodeString(gnbCtx.Config.GNBID)
+	if err != nil {
+		return fmt.Errorf("could not convert gNB ID for location info: %w", err)
+	}
+
+	tacBytes := make([]byte, 3)
+	binary.BigEndian.PutUint16(tacBytes[1:], uint16(gnbCtx.Config.TAC))
+
+	uplinkNasTransport := ies.UplinkNASTransport{
+		AMFUENGAPID: gnbCtx.AmfUeNgapID,
+		RANUENGAPID: gnbCtx.RanUeNgapID,
+		NASPDU:      nasPDU,
+		UserLocationInformation: ies.UserLocationInformation{
+			Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
+			UserLocationInformationNR: &ies.UserLocationInformationNR{
+				NRCGI: ies.NRCGI{
+					PLMNIdentity: plmnIDBytes,
+					NRCellIdentity: aper.BitString{
+						Bytes:   append(gnbIDBytes, 0x0, 0x0),
+						NumBits: 36,
+					},
+				},
+				TAI: ies.TAI{
+					PLMNIdentity: plmnIDBytes,
+					TAC:          tacBytes,
+				},
+			},
+		},
+	}
+
+	var buffer bytes.Buffer
+	err = uplinkNasTransport.Encode(&buffer)
+	if err != nil {
+		return fmt.Errorf("failed to encode Uplink NAS Transport: %w", err)
+	}
+	encodedPDU := buffer.Bytes()
+
+	logger.LogMessageContent("gNB -> AMF: NGAP UplinkNASTransport", &uplinkNasTransport)
+
+	info := &sctp.SndRcvInfo{
+		Stream: 0,
+		PPID:   60,
+	}
+	_, err = gnbCtx.SCTPConn.SCTPWrite(encodedPDU, info)
+	if err != nil {
+		return fmt.Errorf("failed to send Uplink NAS Transport over SCTP: %w", err)
+	}
+
+	log.Println("INFO: Uplink NAS Transport sent successfully.")
+	return nil
 }
