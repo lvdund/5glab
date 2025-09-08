@@ -1,6 +1,7 @@
 package sctp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -74,16 +75,47 @@ func (sc *SctpConn) ListenAMF(conn *sctp.SCTPConn, msgRevChan chan<- []byte) {
 	}
 }
 
-func (sc *SctpConn) Send(msg []byte) (err error) {
-	// SCTP write
-	info := &sctp.SndRcvInfo{Stream: 0, PPID: 60}
-	_, err = sc.conn.SCTPWrite(msg, info)
-	if err != nil {
-		return err
+// Send NGAP message with correct PPID (big-endian)
+func (s *SctpConn) Send(data []byte) error {
+	ppid := binary.BigEndian.Uint32([]byte{0, 0, 0, 60}) // NGAP = 60
+	info := &sctp.SndRcvInfo{
+		Stream: 0,
+		PPID:   ppid,
 	}
-	return nil
+	_, err := s.conn.SCTPWrite(data, info)
+	return err
 }
 
 func (sc *SctpConn) GetConn() *sctp.SCTPConn {
 	return sc.conn
 }
+
+func (s *SctpConn) Recv() ([]byte, error) {
+	buf := make([]byte, 4096)
+	n, _, err := s.conn.SCTPRead(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf[:n], nil
+}
+
+/*func (sc *SctpConn) IsAlive() bool {
+	if sc.conn == nil {
+		return false
+	}
+	_, err := sc.conn.SCTPWrite([]byte{}, &sctp.SndRcvInfo{Stream: 0, PPID: 0})
+	return err == nil
+}
+
+func (sc *SctpConn) Reconnect() error {
+	if sc.conn != nil {
+		sc.conn.Close()
+	}
+	conn, err := connectToAmf(sc.amfAddr, sc.amfPort)
+	if err != nil {
+		return err
+	}
+	sc.conn = conn
+	return nil
+}
+*/

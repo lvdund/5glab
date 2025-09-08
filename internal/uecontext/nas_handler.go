@@ -1,76 +1,143 @@
 package uecontext
-
+/*
 import (
 	"fmt"
 
 	"github.com/reogac/nas"
 )
 
-// HandleNasPdu parse NAS PDU
-func (ue *UEContext) handleNasPdu(pdu []byte) {
-	if len(pdu) == 0 {
-		fmt.Println("NAS PDU empty")
+// Authentication result constants
+const (
+	AUTH_SUCCESS     = 0
+	AUTH_MAC_FAILURE = 1
+	AUTH_SYNC_FAILURE = 2
+)
+
+// UEContext định nghĩa trạng thái UE
+type UEContext struct {
+	SUPI string
+	PLMN string
+
+	RanUeNgapId int
+	AmfUeNgapId int
+
+	Snssai []byte
+
+	MsgFromGnbChan chan []byte
+	MsgToGnbChan   chan []byte
+
+	// Authentication
+	AuthCtx *AuthContext
+	AuthKey []byte
+	AuthOpc []byte
+
+	MCC string
+	MNC string
+}
+
+// Handle NAS bytes từ gNB
+
+func (ue *UEContext) handleNasMsg(nasBytes []byte) {
+	if len(nasBytes) == 0 {
+		fmt.Println("NAS message is empty")
 		return
 	}
-
-	fmt.Printf("NAS PDU raw: % X\n", pdu)
 
 	nasCtx := nas.NewNasContext(false)
 
-	// Decode NAS message
-	var nasMsg nas.NasMessage
-	var err error
-	if nasMsg, err = nas.Decode(nasCtx, pdu, false); err != nil {
-		fmt.Println("NAS decode failed:", err)
+	nasMsg, err := nas.Decode(nasCtx, nasBytes, false)
+	if err != nil {
+		fmt.Println("Decode NAS message failed:", err)
 		return
 	}
 
-	if nasMsg.Gmm != nil {
-		switch nasMsg.Gmm.MsgType {
-		case nas.AuthenticationRequestMsgType:
-			fmt.Println("Received Authentication Request")
+	ue.handleNasGmm(&nasMsg)
+}
 
-		case nas.AuthenticationRejectMsgType:
-			fmt.Println("Received Authentication Reject")
-
-		case nas.IdentityRequestMsgType:
-			fmt.Println("Received Identity Request")
-
-		case nas.SecurityModeCommandMsgType:
-			fmt.Println("Received Security Mode Command")
-
-		case nas.RegistrationAcceptMsgType:
-			fmt.Println("Received Registration Accept")
-			fmt.Printf("Registration Accept: %+v\n", nasMsg.Gmm.RegistrationAccept)
-
-		case nas.ConfigurationUpdateCommandMsgType:
-			fmt.Println("Received Configuration Update Command")
-
-		case nas.DlNasTransportMsgType:
-			fmt.Println("Received DL NAS Transport")
-
-		case nas.ServiceAcceptMsgType:
-			fmt.Println("Received Service Accept")
-
-		case nas.ServiceRejectMsgType:
-			fmt.Println("Received Service Reject")
-
-		case nas.RegistrationRejectMsgType:
-			fmt.Println("Received Registration Reject")
-
-		case nas.GmmStatusMsgType:
-			fmt.Println("Received Status 5GMM")
-
-		case nas.DeregistrationAcceptFromUeMsgType:
-			fmt.Println("Received Deregistration Accept")
-
-		case nas.DeregistrationRequestToUeMsgType:
-			fmt.Println("Received Deregistration Request to UE")
-
-		default:
-			fmt.Printf("Received unknown NAS message type: 0x%x\n", nasMsg.Gmm.MsgType)
-		}
-	} else {
+// Xử lý các message GMM trong NAS
+func (ue *UEContext) handleNasGmm(nasMsg *nas.NasMessage) {
+	gmm := nasMsg.Gmm
+	if gmm == nil {
 		fmt.Println("NAS message has no GMM content")
+		return
+	}
+
+	switch gmm.MsgType {
+	case nas.AuthenticationRequestMsgType:
+		fmt.Println("Received Authentication Request")
+		ue.handleAuthenticationRequest(gmm.AuthenticationRequest)
+
+	case nas.AuthenticationRejectMsgType:
+		fmt.Println("Received Authentication Reject")
+		// Xử lý authentication reject nếu cần
+
+	case nas.IdentityRequestMsgType:
+		fmt.Println("Received Identity Request")
+		// Xử lý Identity Request
+
+	case nas.SecurityModeCommandMsgType:
+		fmt.Println("Received Security Mode Command")
+		// Xử lý Security Mode Command
+
+	case nas.RegistrationAcceptMsgType:
+		fmt.Println("Received Registration Accept")
+		// Xử lý Registration Accept
+
+	default:
+		fmt.Printf("Received unknown NAS GMM message type: 0x%x\n", gmm.MsgType)
 	}
 }
+
+// Xử lý Authentication Request
+func (ue *UEContext) handleAuthenticationRequest(msg *nas.AuthenticationRequest) {
+	if msg == nil {
+		fmt.Println("Authentication Request is nil")
+		return
+	}
+
+	if len(msg.AuthenticationParameterRand) == 0 || len(msg.AuthenticationParameterAutn) == 0 {
+		fmt.Println("RAND or AUTN missing in Authentication Request")
+		return
+	}
+
+	ue.AuthCtx.rand = msg.AuthenticationParameterRand
+	autn := msg.AuthenticationParameterAutn
+	abba := msg.Abba
+
+	// Tính RES* và lấy errCode
+	errCode, resStar := ue.AuthCtx.ProcessAuthenticationInfo(autn, abba)
+
+	var response nas.GmmMessage
+	switch errCode {
+	case AUTH_SUCCESS:
+		fmt.Println("Authentication success, sending Authentication Response")
+		resp := &nas.AuthenticationResponse{
+			AuthenticationResponseParameter: resStar,
+		}
+		resp.SetSecurityHeader(nas.NasSecNone)
+		response = resp
+
+	case AUTH_MAC_FAILURE:
+		fmt.Println("Authentication failed: MAC failure")
+		resp := &nas.AuthenticationFailure{
+			GmmCause: nas.Cause5GMMMACFailure,
+		}
+		resp.SetSecurityHeader(nas.NasSecNone)
+		response = resp
+
+	case AUTH_SYNC_FAILURE:
+		fmt.Println("Authentication failed: Sync failure")
+		resp := &nas.AuthenticationFailure{
+			GmmCause:                       nas.Cause5GMMSynchFailure,
+			AuthenticationFailureParameter: resStar,
+		}
+		resp.SetSecurityHeader(nas.NasSecNone)
+		response = resp
+	}
+
+	// Encode NAS message đúng signature (*NasContext, nas.GmmMessage, bool)
+	responsePdu, _ := nas.EncodeMm(nas.NewNasContext(false), response, false)
+	ue.MsgToGnbChan <- responsePdu
+	fmt.Println("Sent Authentication Response/Failure")
+}
+*/

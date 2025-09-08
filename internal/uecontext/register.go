@@ -1,5 +1,5 @@
 package uecontext
-
+/*
 import (
 	"fmt"
 
@@ -40,3 +40,4 @@ func (ue *UEContext) BuildRegistrationRequest() (*nas.RegistrationRequest, []byt
 
 	return msg, buf, nil
 }
+*/
