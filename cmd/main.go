@@ -63,7 +63,7 @@ func main() {
 	log.Println("SUCCESS: gNB is operational.")
 	time.Sleep(1 * time.Second)
 
-	ueCtx, err := ue_context.NewUEContext(&cfg.UE, radioLink)
+	ueCtx, err := ue_context.NewUEContext(&cfg.UE, cfg.GNB.MCC, cfg.GNB.MNC, radioLink)
 	if err != nil {
 		log.Fatalf("FATAL: Failed to create UE context: %v", err)
 	}

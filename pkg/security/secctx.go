@@ -2,7 +2,6 @@ package security
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 
 	"github.com/reogac/nas"
 	"github.com/reogac/utils/sec5g"
@@ -108,33 +107,15 @@ func (ctx *SecurityContext) UpdateNh() error {
 	return ctx.createNh(ctx.nh)
 }
 
-func (ctx *SecurityContext) DeriveNasKeys(encAlg, intAlg, hdp uint8) (err error) {
-	//first, derive KAMF if neccesary
-	var p0 []byte
-	var p1 [4]byte
-	var kamf []byte
-	switch hdp {
-	case HDP_HANDOVER:
-		p0, _ = hex.DecodeString("01")
-		binary.BigEndian.PutUint32(p1[:], uint32(ctx.gppNas.DlCounter()))
-		kamf, err = sec5g.KamfPrime(ctx.kamf, p0, p1[:])
-	case HDP_MOBILITY_UPDATE:
-		p0, _ = hex.DecodeString("00")
-		binary.BigEndian.PutUint32(p1[:], uint32(ctx.gppNas.UlCounter()))
-		kamf, err = sec5g.KamfPrime(ctx.kamf, p0, p1[:])
-	default:
-		kamf = ctx.kamf
-	}
-	if err != nil {
+func DeriveNasKeys(kamf []byte, nasUplinkCount, nasDownlinkCount uint32, encAlg, intAlg uint8) (encKey []byte, intKey []byte, err error) {
+
+	p0 := []byte{nas.AccessType3GPP}
+	p1 := []byte{intAlg}
+	if intKey, err = AlgKey(kamf, p0, p1); err != nil {
 		return
 	}
-	//then derive key for nas contexts
-	if err = ctx.gppNas.DeriveKeys(encAlg, intAlg, kamf); err != nil {
-		return
-	}
-	if err = ctx.nonGppNas.DeriveKeys(encAlg, intAlg, kamf); err != nil {
-		return
-	}
-	ctx.kamf = kamf
+
+	p1[0] = encAlg
+	encKey, err = AlgKey(kamf, p0, p1)
 	return
 }

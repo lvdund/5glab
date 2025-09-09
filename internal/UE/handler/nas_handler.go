@@ -65,6 +65,7 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 	}
 
 	if nasMsg.Gmm != nil {
+		var responsePDU []byte
 		switch nasMsg.Gmm.MsgType {
 		case nas.AuthenticationRequestMsgType:
 			log.Println("INFO: [UE] Received Authentication Request.")
@@ -87,7 +88,7 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 
 			resStar := securityResult.RES_star
 
-			responsePDU, err := BuildAuthenticationResponse(ueCtx, resStar)
+			responsePDU, err = BuildAuthenticationResponse(ueCtx, resStar)
 			if err != nil {
 				log.Printf("ERROR: [UE] Failed to build Authentication Response: %v", err)
 				return
@@ -96,8 +97,65 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 			ueCtx.Radio.UplinkChan <- responsePDU
 			log.Println("INFO: [UE] Sent Authentication Response to gNB.")
 
-		default:
+		case nas.SecurityModeCommandMsgType:
+			log.Println("INFO: [UE] Received Security Mode Command.")
+			smc := nasMsg.Gmm.SecurityModeCommand
 
+			encAlg := smc.SelectedNasSecurityAlgorithms.EncAlg()
+			intAlg := smc.SelectedNasSecurityAlgorithms.IntAlg()
+
+			err := ueCtx.ActivateNasSecurity(encAlg, intAlg)
+			if err != nil {
+				log.Printf("ERROR: [UE] Failed to activate NAS security: %v", err)
+				return
+			}
+
+			responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
+			if err != nil {
+				log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
+				return
+			}
+
+			ueCtx.Radio.UplinkChan <- responsePDU
+			log.Println("INFO: [UE] Sent Security Mode Complete to gNB.")
+
+			responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
+			if err != nil {
+				log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
+				return
+			}
+
+			ueCtx.Radio.UplinkChan <- responsePDU
+			log.Println("INFO: [UE] Sent Security Mode Complete to gNB.")
+
+		case nas.RegistrationAcceptMsgType:
+			log.Println("INFO: [UE] Received Registration Accept.")
+			regAccept := nasMsg.Gmm.RegistrationAccept
+
+			if regAccept.Guti != nil {
+				if guti, ok := regAccept.Guti.Id.(*nas.Guti); ok {
+					ueCtx.GUTI = guti
+					log.Printf("INFO: [UE] GUTI updated to: %s", ueCtx.GUTI.String())
+				} else {
+					log.Printf("WARN: [UE] Received a Mobile Identity in Registration Accept, but it was not a GUTI.")
+				}
+			}
+
+			ueCtx.State = context.Registered
+			log.Println("SUCCESS: [UE] UE is now in REGISTERED state.")
+
+			nasSecCtx := ueCtx.SecurityContext.NasContext
+
+			responsePDU, err = BuildRegistrationComplete(ueCtx, nasSecCtx)
+			if err != nil {
+				log.Printf("ERROR: [UE] Failed to build Registration Complete: %v", err)
+				return
+			}
+
+			ueCtx.Radio.UplinkChan <- responsePDU
+			log.Println("INFO: [UE] Sent Registration Complete to gNB. Registration procedure finished.")
+
+		default:
 			log.Printf("WARN: [UE] Received unhandled GMM message type: 0x%02x", nasMsg.Gmm.MsgType)
 		}
 	}
@@ -117,5 +175,37 @@ func BuildAuthenticationResponse(ueCtx *context.UEContext, res []byte) ([]byte, 
 	}
 
 	logger.LogMessageContent("UE -> gNB: NAS AuthenticationResponse", msg)
+	return data, nil
+}
+
+func BuildSecurityModeComplete(ueCtx *context.UEContext, nasCtx *nas.NasContext) ([]byte, error) {
+	log.Println("INFO: --- [UE] Building NAS Security Mode Complete ---")
+
+	msg := new(nas.SecurityModeComplete)
+
+	msg.SetSecurityHeader(2)
+
+	data, err := nas.EncodeMm(nasCtx, msg, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode NAS Security Mode Complete: %w", err)
+	}
+
+	logger.LogMessageContent("UE -> gNB: NAS SecurityModeComplete", msg)
+	return data, nil
+}
+
+func BuildRegistrationComplete(ueCtx *context.UEContext, nasCtx *nas.NasContext) ([]byte, error) {
+	log.Println("INFO: --- [UE] Building NAS Registration Complete ---")
+
+	msg := new(nas.RegistrationComplete)
+
+	msg.SetSecurityHeader(3)
+
+	data, err := nas.EncodeMm(nasCtx, msg, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode NAS Registration Complete: %w", err)
+	}
+
+	logger.LogMessageContent("UE -> gNB: NAS RegistrationComplete", msg)
 	return data, nil
 }

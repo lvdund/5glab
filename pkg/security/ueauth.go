@@ -25,6 +25,8 @@ func kdfLen(input []byte) []byte {
 	return r
 }
 
+//
+
 func KDF(key []byte, FC string, param ...[]byte) (sum []byte, err error) {
 	kdf := hmac.New(sha256.New, key)
 

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/reogac/nas"
 )
@@ -20,10 +21,11 @@ const (
 )
 
 type UEConfig struct {
-	IMSI string `yaml:"imsi"`
-	Key  string `yaml:"key"`
-	OP   string `yaml:"op"`
-	AMF  string `yaml:"amf"`
+	IMSI   string `yaml:"imsi"`
+	Key    string `yaml:"key"`
+	OP     string `yaml:"op"`
+	OpType string `yaml:"opType"`
+	AMF    string `yaml:"amf"`
 }
 
 type UESecurityContext struct {
@@ -32,6 +34,9 @@ type UESecurityContext struct {
 	UplinkNASCount   uint32
 	DownlinkNASCount uint32
 	Sqn              security.Sqn
+	NasContext       *nas.NasContext
+	CipheringAlg     uint8
+	IntegrityAlg     uint8
 }
 
 type UEContext struct {
@@ -50,7 +55,7 @@ type UEContext struct {
 	Radio            *radio.RadioLink
 }
 
-func NewUEContext(cfg *UEConfig, radioLink *radio.RadioLink) (*UEContext, error) {
+func NewUEContext(cfg *UEConfig, mcc string, mnc string, radioLink *radio.RadioLink) (*UEContext, error) {
 	if len(cfg.Key) != 32 || len(cfg.OP) != 32 {
 		return nil, errors.New("configuration error: Key and OP must be 32-character hex strings (16 bytes)")
 	}
@@ -62,21 +67,32 @@ func NewUEContext(cfg *UEConfig, radioLink *radio.RadioLink) (*UEContext, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode OP: %w", err)
 	}
-	block, err := aes.NewCipher(k)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher for OPc calculation: %w", err)
-	}
-	opc := make([]byte, 16)
-	block.Encrypt(opc, op)
-	for i := 0; i < 16; i++ {
-		opc[i] ^= op[i]
-	}
-	supi := "imsi-" + cfg.IMSI
-	mcc := cfg.IMSI[0:3]
 
-	mnc := cfg.IMSI[3:6]
-	if len(cfg.IMSI) == 14 {
-		mnc = "0" + cfg.IMSI[3:5]
+	log.Printf("DEBUG: [UE Context] Loaded config: IMSI=%s, Key=%s, OP=%s, OpType='%s'", cfg.IMSI, cfg.Key, cfg.OP, cfg.OpType)
+
+	var opc []byte
+	if cfg.OpType == "OPC" {
+		opc = op
+		log.Printf("DEBUG: [UE Context] Using provided value as OPc: %x", opc)
+
+	} else {
+		log.Printf("DEBUG: [UE Context] Calculating OPc from OP...")
+		block, err := aes.NewCipher(k)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create cipher for OPc calculation: %w", err)
+		}
+		opc = make([]byte, 16)
+		block.Encrypt(opc, op)
+		for i := 0; i < 16; i++ {
+			opc[i] ^= op[i]
+		}
+		log.Printf("DEBUG: [UE Context] Calculated OPc: %x", opc)
+	}
+
+	supi := "imsi-" + cfg.IMSI
+
+	if len(mnc) == 2 {
+		mnc = "0" + mnc
 	}
 
 	ctx := &UEContext{
@@ -88,7 +104,6 @@ func NewUEContext(cfg *UEConfig, radioLink *radio.RadioLink) (*UEContext, error)
 		supi:   supi,
 		mcc:    mcc,
 		mnc:    mnc,
-
 		SecurityContext: UESecurityContext{
 			NgKSI: nas.KeySetIdentifier{
 				Tsc: 0,
@@ -97,9 +112,27 @@ func NewUEContext(cfg *UEConfig, radioLink *radio.RadioLink) (*UEContext, error)
 			UplinkNASCount:   0,
 			DownlinkNASCount: 0,
 			Sqn:              security.Sqn{},
+			NasContext:       nas.NewNasContext(false),
 		},
 	}
 	return ctx, nil
+}
+
+func (c *UEContext) ActivateNasSecurity(encAlg, intAlg uint8) error {
+	if c.SecurityContext.Kamf == nil {
+		return errors.New("cannot activate NAS security without Kamf")
+	}
+
+	err := c.SecurityContext.NasContext.DeriveKeys(intAlg, encAlg, c.SecurityContext.Kamf)
+	if err != nil {
+		return fmt.Errorf("failed to derive NAS keys in nas context: %w", err)
+	}
+
+	c.SecurityContext.UplinkNASCount = 0
+	c.SecurityContext.DownlinkNASCount = 0
+
+	log.Println("INFO: [UE Context] NAS security keys derived and context activated.")
+	return nil
 }
 
 func (c *UEContext) K() []byte {

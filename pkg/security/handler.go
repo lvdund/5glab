@@ -61,6 +61,10 @@ func HandleAuthenticationChallenge(ueAuth UEAndNetworkAuth, rand []byte, autn []
 
 	snn := fmt.Sprintf("5G:mnc%s.mcc%s.3gppnetwork.org", ueAuth.Mnc(), ueAuth.Mcc())
 
+	log.Printf("DEBUG: [UE KDF Inputs] SNN      : %s", snn)
+	log.Printf("DEBUG: [UE KDF Inputs] RAND     : %x", rand)
+	log.Printf("DEBUG: [UE KDF Inputs] RES      : %x", res)
+
 	resStar, _, err := ResstarXresstar(ckik, []byte(snn), rand, res)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive RES*: %v", err)
