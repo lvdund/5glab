@@ -34,3 +34,5 @@ go.work.sum
 /internal/uecontext/sec/computeRES.go
 /internal/uecontext/nas_handler.go
 /internal/uecontext/register.go
+
+/tools/

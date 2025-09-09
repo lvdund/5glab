@@ -171,6 +171,7 @@ _, macs, ferr := m.F1(sqn[:], amfSlice)
 		return
 	}
 
+	/*
 	// Debug prints
 	fmt.Printf("[Milenage DEBUG] rand=%x\n", m.rand)
 	fmt.Printf("[Milenage DEBUG] opc=%x\n", m.opc[:])
@@ -179,7 +180,7 @@ _, macs, ferr := m.F1(sqn[:], amfSlice)
 	fmt.Printf("[Milenage DEBUG] SQN=%x\n", sqn)
 	fmt.Printf("[Milenage DEBUG] AMF=%x\n", amfBytes)
 	fmt.Printf("[Milenage DEBUG] MAC_calc=%x\n", macs)
-	fmt.Printf("[Milenage DEBUG] MAC_recv=%x\n", macReceived)
+	fmt.Printf("[Milenage DEBUG] MAC_recv=%x\n", macReceived)*/
 
 	if !bytes.Equal(macs, macReceived) {
 		err = fmt.Errorf("MAC failed: calculated MAC=%x, received MAC=%x", macs, macReceived)

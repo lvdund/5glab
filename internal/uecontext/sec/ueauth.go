@@ -91,11 +91,16 @@ func CkPrimeIkPrime(key []byte, servingnet []byte, sqnxorak []byte) (ck []byte, 
 }
 
 func ResstarXresstar(key, servingnet, rand, res []byte) (resstar []byte, xresstar []byte, err error) {
-	var buf []byte
-	if buf, err = KDF(key, FC_FOR_RES_STAR_XRES_STAR_DERIVATION, servingnet, rand, res); err == nil {
-		l := len(buf) / 2
-		resstar = buf[:l]
-		xresstar = buf[l:]
-	}
-	return
+    var buf []byte
+    if buf, err = KDF(key, FC_FOR_RES_STAR_XRES_STAR_DERIVATION, servingnet, rand, res); err != nil {
+        return nil, nil, err
+    }
+    l := len(buf) / 2
+
+    // Swap halves: AMF expects RES* in the second half
+    resstar = buf[l:]
+    xresstar = buf[:l]
+
+    return resstar, xresstar, nil
 }
+

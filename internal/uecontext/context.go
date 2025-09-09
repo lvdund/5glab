@@ -43,7 +43,7 @@
         nasPdu []byte
         sessions      [16]*PduSession
         UplinkNASChan chan []byte
-        SecurityCtx *SecurityContext
+       SecurityCtx *sec.SecurityContext
     }
 
     type PduSession struct {
@@ -79,12 +79,12 @@
             sqn:      sec.Sqn{},
             rand:     make([]byte, 16),
         }
-        ue.SecurityCtx = &SecurityContext{
-            K:        ue.AuthKey,
-            OPC:      ue.AuthOpc,
-            SQN:      0,
-            NASCount: 0,
-        }
+        ue.SecurityCtx = sec.NewSecurityContext(
+            &nas.KeySetIdentifier{Tsc: 1, Id: 0}, // Key Set Identifier
+            ue.AuthKey,                             // KAMF
+            true,                                   // isAmf
+)
+
 
         return ue
     }
@@ -277,10 +277,13 @@
         }
 
         ueSecCap := &nas.UeSecurityCapability{}
-        ueSecCap.SetEA(0, true)
-        ueSecCap.SetIA(1, true)
-        ueSecCap.SetEEA(0, true)
-        ueSecCap.SetEIA(1, true)
+        ueSecCap.SetEA(0, true) // NEA0
+        ueSecCap.SetEA(1, true) // 128-NEA1
+        ueSecCap.SetEA(2, true) // 128-NEA2
+        ueSecCap.SetIA(0, true) // NIA0
+        ueSecCap.SetIA(1, true) // 128-NIA1
+        ueSecCap.SetIA(2, true) // 128-NIA2
+
 
         msg := &nas.RegistrationRequest{
             RegistrationType: nas.NewRegistrationType(true, nas.RegistrationType5GSInitialRegistration),
@@ -315,10 +318,26 @@
             fmt.Println("Security Mode Command is nil")
             return
         }
-        resp := &nas.SecurityModeComplete{}
-        resp.SetSecurityHeader(0x01)
 
-        buf, err := nas.EncodeMm(nas.NewNasContext(false), resp, false)
+        algs := msg.SelectedNasSecurityAlgorithms
+        if err := ue.SecurityCtx.DeriveNasKeys(algs.EncAlg(), algs.IntAlg(), sec.HDP_NONE); err != nil {
+            fmt.Println("DeriveNasKeys failed:", err)
+            return
+        }
+
+        resp := &nas.SecurityModeComplete{}
+
+        // Dummy IMEISV
+        imeisv := nas.Imei{IsSv: true}
+        imeisv.Parse("1110000000000000")
+        resp.Imeisv = &nas.MobileIdentity{Id: &imeisv}
+
+        resp.SetSecurityHeader(nas.NasSecBothNew)
+
+        nasCtx := ue.SecurityCtx.NasContext(true)
+
+        // Encode NAS PDU
+        buf, err := nas.EncodeMm(nasCtx, resp, false)
         if err != nil {
             fmt.Println("Encode SecurityModeComplete failed:", err)
             return
@@ -326,7 +345,7 @@
 
         ue.MsgToGnbChan <- buf
         fmt.Println("Sent Security Mode Complete")
-    }
+}
 
 
     // Registration Accept handler 
