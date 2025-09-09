@@ -3,12 +3,11 @@ package handler
 import (
 	"5g-emulator/internal/UE/context"
 	"5g-emulator/pkg/logger"
-	"encoding/hex"
+	"5g-emulator/pkg/security"
 	"fmt"
 	"log"
 
 	"github.com/reogac/nas"
-	"github.com/reogac/utils/sec5g"
 )
 
 func BuildRegistrationRequest(ueCtx *context.UEContext) ([]byte, error) {
@@ -68,35 +67,25 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 	if nasMsg.Gmm != nil {
 		switch nasMsg.Gmm.MsgType {
 		case nas.AuthenticationRequestMsgType:
-			log.Println("SUCCESS: [UE] Received Authentication Request!")
+			log.Println("INFO: [UE] Received Authentication Request.")
 
 			authRequest := nasMsg.Gmm.AuthenticationRequest
 			rand := authRequest.AuthenticationParameterRand
+			autn := authRequest.AuthenticationParameterAutn
 
-			k, _ := hex.DecodeString(ueCtx.Config.Key)
-			opc, _ := hex.DecodeString(ueCtx.Config.OPc)
-
-			m, err := sec5g.NewMilenage(k, opc, true)
+			securityResult, err := security.HandleAuthenticationChallenge(ueCtx, rand, autn)
 			if err != nil {
-				log.Printf("ERROR: [UE] Failed to create Milenage instance: %v", err)
+				log.Printf("ERROR: [UE] Authentication procedure failed: %v", err)
 				return
 			}
 
-			if err := m.SetRand(rand); err != nil {
-				log.Printf("ERROR: [UE] Failed to set RAND for Milenage: %v", err)
-				return
-			}
+			log.Println("INFO: [UE] Authentication successful. New security context established.")
+			ueCtx.SecurityContext.NgKSI = authRequest.Ngksi
+			ueCtx.SecurityContext.Kamf = securityResult.KAMF
+			ueCtx.SecurityContext.UplinkNASCount = 0
+			ueCtx.SecurityContext.DownlinkNASCount = 0
 
-			res, ak := m.F2F5()
-			ck := m.F3()
-			ik := m.F4()
-
-			ueCtx.SecurityContext.CK = ck
-			ueCtx.SecurityContext.IK = ik
-			ueCtx.SecurityContext.AK = ak
-
-			resStar := make([]byte, 16)
-			copy(resStar, res)
+			resStar := securityResult.RES_star
 
 			responsePDU, err := BuildAuthenticationResponse(ueCtx, resStar)
 			if err != nil {
@@ -108,6 +97,7 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 			log.Println("INFO: [UE] Sent Authentication Response to gNB.")
 
 		default:
+
 			log.Printf("WARN: [UE] Received unhandled GMM message type: 0x%02x", nasMsg.Gmm.MsgType)
 		}
 	}

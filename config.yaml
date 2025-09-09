@@ -1,4 +1,4 @@
-amf:
+amf:  
   address: "192.168.10.20:38412"
 
 gNB:
@@ -9,8 +9,7 @@ gNB:
   gnbName: "legion-gnb-01"
 
 ue:
-  
-  imsi: "001013683465133"
-  key: "eafbdb3f42a27b59034d0ad60fd9f6d9"
-  opc: "b34a71e62e131f36bbbb33d9f31316d1"
-  amf: "8000"
+  imsi: "001010000000001"
+  key: "465b5ce8b199b49faa5f0a2ee238a6bc"  
+  op: "cdc202d5123e20f62b6d676ac72cb318"
+  amf: "b9b9"

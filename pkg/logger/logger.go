@@ -10,6 +10,5 @@ func LogHexDump(prefix string, pdu []byte) {
 }
 
 func LogMessageContent(prefix string, msg interface{}) {
-
 	log.Printf("%s: %v", prefix, msg)
 }

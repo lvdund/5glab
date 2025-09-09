@@ -63,7 +63,10 @@ func main() {
 	log.Println("SUCCESS: gNB is operational.")
 	time.Sleep(1 * time.Second)
 
-	ueCtx := ue_context.NewUEContext(&cfg.UE, radioLink)
+	ueCtx, err := ue_context.NewUEContext(&cfg.UE, radioLink)
+	if err != nil {
+		log.Fatalf("FATAL: Failed to create UE context: %v", err)
+	}
 	gnbCtx.SetUEContext(ueCtx)
 
 	nasPDU, err := ue_handler.BuildRegistrationRequest(ueCtx)
