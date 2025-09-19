@@ -148,3 +148,4 @@ func (ctx *SecurityContext) DeriveNasKeys(encAlg, intAlg, hdp uint8) (err error)
 	ctx.kamf = kamf
 	return
 }
+

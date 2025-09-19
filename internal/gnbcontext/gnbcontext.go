@@ -2,13 +2,15 @@ package gnbcontext
 
 import (
 	"emulator/internal/sctp"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"log"
-    "encoding/binary"
 
 	"github.com/lvdund/ngap"
 	"github.com/lvdund/ngap/aper"
 	"github.com/lvdund/ngap/ies"
+	"github.com/lvdund/ngap/utils"
 )
 
 type GnbContext struct {
@@ -25,14 +27,13 @@ type GnbContext struct {
 	RevUeMsgChan  chan []byte
 	SendUeMsgChan chan []byte
 
-	RanUeNgapId   uint64
-	AmfUeNgapId   uint64
-	initialSent   bool
+	RanUeNgapId    uint64
+	AmfUeNgapId    uint64
+	initialSent    bool
 	ueContextReady bool
 	nasBuf         chan []byte
-	UeUplinkChan chan []byte
-     CellID uint32
-
+	UeUplinkChan   chan []byte
+	CellID         uint32
 }
 
 // NewGnbContext
@@ -51,9 +52,9 @@ func NewGnbContext(
 
 		AmfConnected: false,
 
-		RanUeNgapId:   1,
-		AmfUeNgapId:   0,
-		initialSent:   false,
+		RanUeNgapId: 1,
+		AmfUeNgapId: 0,
+		initialSent: false,
 
 		sctpConn:      sctpConn,
 		NgapMsgChan:   ngMsgChan,
@@ -66,7 +67,7 @@ func NewGnbContext(
 
 func (g *GnbContext) GetNRCellIdentity() []byte {
 	buf := make([]byte, 5) // NR Cell ID = 36 bits = 4.5 bytes, padding to 5
-	binary.BigEndian.PutUint32(buf[0:4], g.CellID<<4) 
+	binary.BigEndian.PutUint32(buf[0:4], g.CellID<<4)
 	return buf
 }
 
@@ -140,7 +141,6 @@ func (gnb *GnbContext) HandleNgapMsg() {
 	}
 }
 
-
 // HandlerUeNasMsg process NAS from UE → InitialUEMessage sends AMF
 func (gnb *GnbContext) HandlerUeNasMsg() {
 	for msg := range gnb.RevUeMsgChan {
@@ -190,7 +190,7 @@ func (gnb *GnbContext) HandlerUeNasMsg() {
 
 			buf, err := ngap.NgapEncode(&uplink)
 			if err != nil {
-				log.Fatalf("Cannot encode UplinkNASTransport: %v", err)
+				log.Fatalf("Cannot encode UplinkNASTransport === : %v", err)
 			}
 			if err := gnb.sctpConn.Send(buf); err != nil {
 				log.Fatalf("Failed to send UplinkNASTransport: %v", err)
@@ -290,16 +290,40 @@ func (gnb *GnbContext) HandleUeUplinkNAS() {
 			continue
 		}
 
+		var gnbid_in_byte []byte
+		gnbid_in_byte, _ = hex.DecodeString(gnb.GnbId)
+		slice := make([]byte, 2)
+
+		cellid := aper.BitString{
+			Bytes:   append(gnbid_in_byte, slice...),
+			NumBits: 36,
+		}
+
+		tac, _ := hex.DecodeString("000001")
+
 		// UplinkNASTransport
 		uplink := ies.UplinkNASTransport{
 			RANUENGAPID: int64(gnb.RanUeNgapId),
 			AMFUENGAPID: int64(gnb.AmfUeNgapId),
 			NASPDU:      nasPdu,
+			UserLocationInformation: ies.UserLocationInformation{
+				Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
+				UserLocationInformationNR: &ies.UserLocationInformationNR{
+					NRCGI: ies.NRCGI{
+						PLMNIdentity:   utils.PlmnIdToNgap(utils.PlmnId{Mcc: "208", Mnc: "93"}),
+						NRCellIdentity: cellid,
+					},
+					TAI: ies.TAI{
+						PLMNIdentity: utils.PlmnIdToNgap(utils.PlmnId{Mcc: "208", Mnc: "93"}),
+						TAC: tac,
+					},
+				},
+			},
 		}
 
 		buf, err := ngap.NgapEncode(&uplink)
 		if err != nil {
-			log.Printf("Cannot encode UplinkNASTransport: %v", err)
+			log.Printf("Cannot encode UplinkNASTransport --- : %v", err)
 			continue
 		}
 		if err := gnb.sctpConn.Send(buf); err != nil {
@@ -310,18 +334,7 @@ func (gnb *GnbContext) HandleUeUplinkNAS() {
 	}
 }
 
-
-
-
-
-
-
-
-
-
-
-
-// 4/9/2025 
+// 4/9/2025
 /*
 
 func (gnb *GnbContext) getPLMNIdentity() []byte {

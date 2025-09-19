@@ -1,18 +1,20 @@
-    package uecontext
+package uecontext
 
-    import (
-    "fmt"
-    "strings"
-    "time"
+import (
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"time"
 
-    "emulator/internal/uecontext/sec"
-    "github.com/reogac/nas"
-    )
+	"emulator/internal/uecontext/sec"
 
-    // Dummy PDU Session state
+	"github.com/reogac/nas"
+)
+
+// Dummy PDU Session state
     const (
-    PDUSessionInactive = 0
-    PDUSessionActive   = 1
+        PDUSessionInactive = 0
+        PDUSessionActive   = 1
     )
 
     // Dummy event constants
@@ -36,14 +38,15 @@
         MsgFromGnbChan chan []byte
         MsgToGnbChan   chan []byte
         AuthCtx *AuthContext
-        AuthKey []byte
-        AuthOpc []byte
+        AuthKey string
+        AuthOpc string
+        AuthOp string
         MCC string
         MNC string
         nasPdu []byte
         sessions      [16]*PduSession
         UplinkNASChan chan []byte
-       SecurityCtx *sec.SecurityContext
+        secCtx *sec.SecurityContext 
     }
 
     type PduSession struct {
@@ -64,13 +67,16 @@
             Snssai:         []byte{0x01, 0x01, 0x02, 0x03},
             MsgFromGnbChan: msgFromGnbChan,
             MsgToGnbChan:   msgToGnbChan,
-            AuthKey: []byte{0x8b,0xaf,0x47,0x3f,0x2f,0x8f,0xd0,0x94,0x87,0xcc,0xcb,0xd7,0x09,0x7c,0x68,0x62},  // K
-            AuthOpc: []byte{0x8e,0x27,0xb6,0xaf,0x0e,0x69,0x2e,0x75,0x0f,0x32,0x66,0x7a,0x3b,0x14,0x60,0x5d},  // OPC
+            AuthKey: "8baf473f2f8fd09487cccbd7097c6862",
+            AuthOp: "8e27b6af0e692e750f32667a3b14605d",
             MCC:            plmn[:3],
             MNC:            plmn[3:],
         }
 
-        milenage, _ := sec.NewMilenage(ue.AuthKey, ue.AuthOpc, true)
+        op,_ := hex.DecodeString(ue.AuthOp)
+        key, _ := hex.DecodeString(ue.AuthKey)
+        
+        milenage, _ := sec.NewMilenage(key, op, true)
         ue.AuthCtx = &AuthContext{
             supi:     supi,
             snn:      []byte(plmn),
@@ -79,31 +85,33 @@
             sqn:      sec.Sqn{},
             rand:     make([]byte, 16),
         }
-        ue.SecurityCtx = sec.NewSecurityContext(
-            &nas.KeySetIdentifier{Tsc: 1, Id: 0}, // Key Set Identifier
-            ue.AuthKey,                             // KAMF
-            true,                                   // isAmf
-)
-
+        ue.secCtx = nil 
 
         return ue
     }
 
+    // Getter NAS context
+    func (ue *UEContext) getNasContext() *nas.NasContext {
+        if ue.secCtx == nil {
+            return nil
+        }
+        return ue.secCtx.NasContext(true) 
+    }
+
     // NAS handlers loop 
     func (ue *UEContext) HandlerNasMsg() {
-        timeout := 10 * time.Second
+        timeout := 20 * time.Second
         for {
             select {
             case msg := <-ue.MsgFromGnbChan:
                 fmt.Println("[UE] Received NAS from gNB, len:", len(msg))
-                fmt.Printf("[UE] Raw NAS: %x\n", msg)
+              //  fmt.Printf("[UE] Raw NAS: %x\n", msg)
                 ue.handleNasMsg(msg)
             case <-time.After(timeout):
                 fmt.Println("[UE] Timeout waiting for NAS message from gNB, continue...")
             }
         }
     }
-
 
     func (ue *UEContext) handleNasMsg(nasBytes []byte) {
         if len(nasBytes) == 0 {
@@ -121,7 +129,6 @@
         }
         ue.handleNasGmm(&nasMsg, secHeaderType)
     }
-
 
     func (ue *UEContext) handleNasGmm(nasMsg *nas.NasMessage, secHeaderType uint8) {
         gmm := nasMsg.Gmm
@@ -235,7 +242,7 @@
         fmt.Printf("[UE] Received AUTN: %x\n", autn)
         fmt.Printf("[UE] Stored RAND: %x\n", ue.AuthCtx.rand)
 
-    // compute res
+        // compute res
         errCode, resStar := ue.AuthCtx.ProcessAuthenticationInfo(autn, abba)
         if errCode != AUTH_SUCCESS {
             fmt.Println("[UE] Authentication failed, cannot compute RES*")
@@ -244,6 +251,13 @@
 
         fmt.Println("Authentication success")
         fmt.Printf("[UE] RES*: %x, len=%d\n", resStar, len(resStar))
+        // create SecurityContext now that we have KAMF
+        if ue.AuthCtx != nil && len(ue.AuthCtx.kamf) > 0 {
+            ue.secCtx = sec.NewSecurityContext(&ue.AuthCtx.ngKsi, ue.AuthCtx.kamf, false)
+            fmt.Printf("[UE] SecurityCtx created with KAMF: %x\n", ue.AuthCtx.kamf)
+        } else {
+            fmt.Println("[UE] Warning: no KAMF available after authentication")
+        }
 
         // build NAS message response
         msgResp := &nas.AuthenticationResponse{
@@ -253,7 +267,7 @@
 
         // Encode NAS PDU
         responsePdu, err := nas.EncodeMm(nil, msgResp, true)
-        fmt.Printf("[UE] Authentication Response PDU: %x\n", responsePdu)   //7/9/2025
+        fmt.Printf("[UE] Authentication Response PDU: %x\n", responsePdu)
 
         if err != nil {
             fmt.Println("Encode Authentication message failed:", err)
@@ -284,11 +298,13 @@
         ueSecCap.SetIA(1, true) // 128-NIA1
         ueSecCap.SetIA(2, true) // 128-NIA2
 
+        suci := new(nas.SupiImsi)
+        suci.Parse([]string{"208","93", "0000","0","1", "0000000001"})
 
         msg := &nas.RegistrationRequest{
             RegistrationType: nas.NewRegistrationType(true, nas.RegistrationType5GSInitialRegistration),
             MobileIdentity: nas.MobileIdentity{
-                Id: &nas.Guti{},
+                Id: &nas.Suci{ Content: suci},
             },
             Ngksi:                nas.KeySetIdentifier{Tsc: 1, Id: 0},
             UeSecurityCapability: ueSecCap,
@@ -303,7 +319,7 @@
 
         ue.MsgToGnbChan <- buf
 
-        fmt.Printf("NAS RegistrationRequest sent: PLMN=%s, TAC=%06X, S-NSSAI=", ue.PLMN, 0x000001)
+        fmt.Printf("================= NAS RegistrationRequest sent: PLMN=%s, TAC=%06X, S-NSSAI=", ue.PLMN, 0x000001)
         for _, b := range ue.Snssai {
             fmt.Printf("%02X ", b)
         }
@@ -319,24 +335,59 @@
             return
         }
 
+        // Log selected algorithms
         algs := msg.SelectedNasSecurityAlgorithms
-        if err := ue.SecurityCtx.DeriveNasKeys(algs.EncAlg(), algs.IntAlg(), sec.HDP_NONE); err != nil {
-            fmt.Println("DeriveNasKeys failed:", err)
-            return
+        switch algs.EncAlg() {
+        case nas.AlgCiphering128NEA0:
+            fmt.Println("[UE] Ciphering algorithm: 5G-0")
+        case nas.AlgCiphering128NEA1:
+            fmt.Println("[UE] Ciphering algorithm: 128-5G-1")
+        case nas.AlgCiphering128NEA2:
+            fmt.Println("[UE] Ciphering algorithm: 128-5G-2")
+        case nas.AlgCiphering128NEA3:
+            fmt.Println("[UE] Ciphering algorithm: 128-5G-3")
         }
 
-        resp := &nas.SecurityModeComplete{}
+        switch algs.IntAlg() {
+        case nas.AlgIntegrity128NIA0:
+            fmt.Println("[UE] Integrity algorithm: 5G-IA0")
+        case nas.AlgIntegrity128NIA1:
+            fmt.Println("[UE] Integrity algorithm: 128-5G-IA1")
+        case nas.AlgIntegrity128NIA2:
+            fmt.Println("[UE] Integrity algorithm: 128-5G-IA2")
+        case nas.AlgIntegrity128NIA3:
+            fmt.Println("[UE] Integrity algorithm: 128-5G-IA3")
+        }
 
-        // Dummy IMEISV
+        // Derive NAS keys
+        nasCtx := ue.getNasContext()
+        if nasCtx == nil {
+            fmt.Println("[UE] getNasContext() returned nil, cannot derive keys")
+            return
+        }
+        if err := nasCtx.DeriveKeys(algs.EncAlg(), algs.IntAlg(), []byte{sec.HDP_NONE}); err != nil {
+        fmt.Println("DeriveNasKeys failed:", err)
+        return
+    }
+        // Build SecurityModeComplete
         imeisv := nas.Imei{IsSv: true}
-        imeisv.Parse("1110000000000000")
-        resp.Imeisv = &nas.MobileIdentity{Id: &imeisv}
+        imeisv.Parse("1110000000000000") // dummy IMEI
+        resp := &nas.SecurityModeComplete{
+            Imeisv: &nas.MobileIdentity{Id: &imeisv},
+        }
+
+        // Optional: include Additional Security Information (RINMR)
+        if msg.AdditionalSecurityInformation != nil {
+            resp.NasMessageContainer = ue.nasPdu
+            fmt.Println("[UE] Additional Security Info present, included NAS PDU in container")
+        }
 
         resp.SetSecurityHeader(nas.NasSecBothNew)
 
-        nasCtx := ue.SecurityCtx.NasContext(true)
+        // Log counters
+        fmt.Printf("[UE] UL NAS count: %d, DL NAS count: %d\n", nasCtx.UlCounter(), nasCtx.DlCounter())
 
-        // Encode NAS PDU
+        // Encode and send
         buf, err := nas.EncodeMm(nasCtx, resp, false)
         if err != nil {
             fmt.Println("Encode SecurityModeComplete failed:", err)
@@ -344,9 +395,8 @@
         }
 
         ue.MsgToGnbChan <- buf
-        fmt.Println("Sent Security Mode Complete")
-}
-
+        fmt.Println("====================== Sent Security Mode Complete")
+    }
 
     // Registration Accept handler 
     func (ue *UEContext) handleRegistrationAccept(msg *nas.RegistrationAccept) {
@@ -364,8 +414,7 @@
 
         ue.MsgToGnbChan <- buf
         fmt.Println("Sent Registration Complete – UE is registered")
-        }
-
+    }
 
     //Misc 
     func (ue *UEContext) SendUplinkNAS(nasPdu []byte) {
@@ -379,10 +428,9 @@
         }
     }
 
-
     // Dummy PDU Session trigger
     func (ue *UEContext) TriggerInitPduSessionRequest(sessionId int) {
-        fmt.Println("Initiating PDU Session Request, ID:", sessionId)
+        fmt.Println("====================== Initiating PDU Session Request, ID:", sessionId)
         if sessionId < 0 || sessionId >= len(ue.sessions) {
             fmt.Println("Invalid PDU Session ID")
             return
@@ -390,15 +438,12 @@
         session := &PduSession{id: sessionId, state: PDUSessionInactive}
         ue.sessions[sessionId] = session
         session.SendEventSm(InitPduSessionEstablishmentRequestEvent)
-        }
-
-        func extractMSIN(supi string) string {
-            s := strings.TrimPrefix(strings.ToLower(supi), "imsi-")
-            // IMSI = MCC(3) + MNC(2/3) + MSIN
-            if len(s) > 5 {
-                return s[5:] 
-            }
-            return s
     }
 
-
+    func extractMSIN(supi string) string {
+        s := strings.TrimPrefix(strings.ToLower(supi), "imsi-")
+        if len(s) > 5 {
+            return s[5:] 
+        }
+        return s
+    }

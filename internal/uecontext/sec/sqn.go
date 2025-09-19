@@ -41,11 +41,11 @@ func (n *Sqn) GetVal() uint64 {
 }
 
 // reset due to resync
-func (n *Sqn) reset(sqn []byte) {
-	n.Set(sqn)
-	n.value += SQN_IND - 1
-	n.Inc()
-}
+//func (n *Sqn) reset(sqn []byte) {
+//	n.Set(sqn)
+//	n.value += SQN_IND - 1
+//	n.Inc()
+//}
 
 func (n *Sqn) String() string {
 	return fmt.Sprintf("%x", n.Bytes())

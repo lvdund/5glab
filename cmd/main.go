@@ -108,6 +108,7 @@ waitAMF:
 		select {
 		case <-timeout:
 			log.Fatal("Timeout: did not receive NGSetupResponse from AMF")
+			os.Exit(1)
 		case <-ticker.C:
 			if gnb.AmfConnected {
 				fmt.Println("gNB successfully connected to AMF")
@@ -121,8 +122,8 @@ waitAMF:
 		cfg.UE.SUPI,
 		cfg.UE.PLMN,
 		int(cfg.GNB.RanUeNgapIdStart),
-		sendUeMsgChan,   // UE -> gNB
 		revUeMsgChan,    // gNB -> UE
+		sendUeMsgChan,   // UE -> gNB
 	)
 
 	// Start UE NAS handler
