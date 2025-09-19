@@ -89,3 +89,14 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
 	_, output, _ = security.ResstarXresstar(key, auth.Snn, auth.Rand, res)
 	return
 }
+
+func deriveSNN(mcc, mnc string) string {
+	// 5G:mnc093.mcc208.3gppnetwork.org
+	var resu string
+	if len(mnc) == 2 {
+		resu = "5G:mnc0" + mnc + ".mcc" + mcc + ".3gppnetwork.org"
+	} else {
+		resu = "5G:mnc" + mnc + ".mcc" + mcc + ".3gppnetwork.org"
+	}
+	return resu
+}

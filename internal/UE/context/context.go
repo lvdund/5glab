@@ -108,6 +108,8 @@ func NewUEContext(cfg *UEConfig, mcc string, mnc string, radioLink *radio.RadioL
 
 	authCtx.Supi = fmt.Sprintf("imsi-%s%s%s", mcc, mnc, cfg.IMSI[5:])
 
+	authCtx.Snn = []byte(deriveSNN(mcc, mnc))
+
 	supi := "imsi-" + cfg.IMSI
 
 	// if len(mnc) == 2 {
