@@ -26,6 +26,7 @@ type UEConfig struct {
 	OP     string `yaml:"op"`
 	OpType string `yaml:"opType"`
 	AMF    string `yaml:"amf"`
+	SQN    string `yaml:"sqn"`
 }
 
 type UESecurityContext struct {
@@ -50,12 +51,16 @@ type UEContext struct {
 	mcc  string
 	mnc  string
 
+	Auth AuthContext
+
 	RegistrationArea []nas.TrackingAreaIdentity
-	SecurityContext  UESecurityContext
+	SecurityContext  *security.SecurityContext
 	Radio            *radio.RadioLink
 }
 
 func NewUEContext(cfg *UEConfig, mcc string, mnc string, radioLink *radio.RadioLink) (*UEContext, error) {
+	var ctx *UEContext
+
 	if len(cfg.Key) != 32 || len(cfg.OP) != 32 {
 		return nil, errors.New("configuration error: Key and OP must be 32-character hex strings (16 bytes)")
 	}
@@ -89,13 +94,27 @@ func NewUEContext(cfg *UEConfig, mcc string, mnc string, radioLink *radio.RadioL
 		log.Printf("DEBUG: [UE Context] Calculated OPc: %x", opc)
 	}
 
+	var authCtx AuthContext
+
+	key, _ := hex.DecodeString(cfg.Key)
+	op, _ = hex.DecodeString(cfg.OP)
+	milenage, _ := security.NewMilenage(key, op, true) //use OPC
+	authCtx.Milenage = milenage
+
+	amf, _ := hex.DecodeString(cfg.AMF)
+	sqn, _ := hex.DecodeString(cfg.SQN)
+	authCtx.Amf = amf
+	authCtx.Sqn.Set(sqn)
+
+	authCtx.Supi = fmt.Sprintf("imsi-%s%s%s", mcc, mnc, cfg.IMSI[5:])
+
 	supi := "imsi-" + cfg.IMSI
 
-	if len(mnc) == 2 {
-		mnc = "0" + mnc
-	}
+	// if len(mnc) == 2 {
+	// 	mnc = "0" + mnc
+	// }
 
-	ctx := &UEContext{
+	ctx = &UEContext{
 		Config: cfg,
 		State:  Deregistered,
 		Radio:  radioLink,
@@ -104,32 +123,33 @@ func NewUEContext(cfg *UEConfig, mcc string, mnc string, radioLink *radio.RadioL
 		supi:   supi,
 		mcc:    mcc,
 		mnc:    mnc,
-		SecurityContext: UESecurityContext{
-			NgKSI: nas.KeySetIdentifier{
-				Tsc: 0,
-				Id:  7,
-			},
-			UplinkNASCount:   0,
-			DownlinkNASCount: 0,
-			Sqn:              security.Sqn{},
-			NasContext:       nas.NewNasContext(false),
-		},
+		Auth:   authCtx,
+		// SecurityContext: UESecurityContext{
+		// 	NgKSI: nas.KeySetIdentifier{
+		// 		Tsc: 0,
+		// 		Id:  7,
+		// 	},
+		// 	UplinkNASCount:   0,
+		// 	DownlinkNASCount: 0,
+		// 	Sqn:              security.Sqn{},
+		// 	NasContext:       nas.NewNasContext(false),
+		// },
 	}
 	return ctx, nil
 }
 
 func (c *UEContext) ActivateNasSecurity(encAlg, intAlg uint8) error {
-	if c.SecurityContext.Kamf == nil {
-		return errors.New("cannot activate NAS security without Kamf")
-	}
-
-	err := c.SecurityContext.NasContext.DeriveKeys(intAlg, encAlg, c.SecurityContext.Kamf)
-	if err != nil {
-		return fmt.Errorf("failed to derive NAS keys in nas context: %w", err)
-	}
-
-	c.SecurityContext.UplinkNASCount = 0
-	c.SecurityContext.DownlinkNASCount = 0
+	// if c.SecurityContext.Kamf == nil {
+	// 	return errors.New("cannot activate NAS security without Kamf")
+	// }
+	//
+	// err := c.SecurityContext.NasContext.DeriveKeys(intAlg, encAlg, c.SecurityContext.Kamf)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to derive NAS keys in nas context: %w", err)
+	// }
+	//
+	// c.SecurityContext.UplinkNASCount = 0
+	// c.SecurityContext.DownlinkNASCount = 0
 
 	log.Println("INFO: [UE Context] NAS security keys derived and context activated.")
 	return nil
@@ -156,9 +176,9 @@ func (c *UEContext) Mnc() string {
 }
 
 func (c *UEContext) GetSqn() *security.Sqn {
-	return &c.SecurityContext.Sqn
+	return &c.Auth.Sqn
 }
 
 func (c *UEContext) SetSqn(sqn []byte) {
-	c.SecurityContext.Sqn.Set(sqn)
+	c.Auth.Sqn.Set(sqn)
 }

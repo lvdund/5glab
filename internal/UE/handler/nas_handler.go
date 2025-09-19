@@ -3,7 +3,6 @@ package handler
 import (
 	"5g-emulator/internal/UE/context"
 	"5g-emulator/pkg/logger"
-	"5g-emulator/pkg/security"
 	"fmt"
 	"log"
 
@@ -74,21 +73,29 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 			rand := authRequest.AuthenticationParameterRand
 			autn := authRequest.AuthenticationParameterAutn
 
-			securityResult, err := security.HandleAuthenticationChallenge(ueCtx, rand, autn)
-			if err != nil {
-				log.Printf("ERROR: [UE] Authentication procedure failed: %v", err)
+			// ->ueCtx
+			ueCtx.Auth.Rand = rand
+			ueCtx.Auth.Milenage.SetRand(rand)
+			ueCtx.Auth.NgKsi = authRequest.Ngksi
+
+			// securityResult, err := security.HandleAuthenticationChallenge(ueCtx, rand, autn)
+
+			errCode, paramDat := ueCtx.Auth.ProcessAuthenticationInfo(autn, authRequest.Abba)
+
+			if errCode != 0 {
+				log.Printf("ERROR: [UE] Authentication procedure failed: %d", errCode)
 				return
 			}
 
 			log.Println("INFO: [UE] Authentication successful. New security context established.")
-			ueCtx.SecurityContext.NgKSI = authRequest.Ngksi
-			ueCtx.SecurityContext.Kamf = securityResult.KAMF
-			ueCtx.SecurityContext.UplinkNASCount = 0
-			ueCtx.SecurityContext.DownlinkNASCount = 0
+			// ueCtx.SecurityContext.NgKSI = authRequest.Ngksi
+			// ueCtx.SecurityContext.Kamf = securityResult.KAMF
+			// ueCtx.SecurityContext.UplinkNASCount = 0
+			// ueCtx.SecurityContext.DownlinkNASCount = 0
+			//
+			// resStar := securityResult.RES_star
 
-			resStar := securityResult.RES_star
-
-			responsePDU, err = BuildAuthenticationResponse(ueCtx, resStar)
+			responsePDU, err = BuildAuthenticationResponse(ueCtx, paramDat)
 			if err != nil {
 				log.Printf("ERROR: [UE] Failed to build Authentication Response: %v", err)
 				return
@@ -110,20 +117,20 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 				return
 			}
 
-			responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
-			if err != nil {
-				log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
-				return
-			}
-
-			ueCtx.Radio.UplinkChan <- responsePDU
-			log.Println("INFO: [UE] Sent Security Mode Complete to gNB.")
-
-			responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
-			if err != nil {
-				log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
-				return
-			}
+			// responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
+			// if err != nil {
+			// 	log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
+			// 	return
+			// }
+			//
+			// ueCtx.Radio.UplinkChan <- responsePDU
+			// log.Println("INFO: [UE] Sent Security Mode Complete to gNB.")
+			//
+			// responsePDU, err = BuildSecurityModeComplete(ueCtx, ueCtx.SecurityContext.NasContext)
+			// if err != nil {
+			// 	log.Printf("ERROR: [UE] Failed to build Security Mode Complete: %v", err)
+			// 	return
+			// }
 
 			ueCtx.Radio.UplinkChan <- responsePDU
 			log.Println("INFO: [UE] Sent Security Mode Complete to gNB.")
@@ -144,13 +151,13 @@ func handleNASMessage(ueCtx *context.UEContext, pdu []byte) {
 			ueCtx.State = context.Registered
 			log.Println("SUCCESS: [UE] UE is now in REGISTERED state.")
 
-			nasSecCtx := ueCtx.SecurityContext.NasContext
+			// nasSecCtx := ueCtx.SecurityContext.NasContext
 
-			responsePDU, err = BuildRegistrationComplete(ueCtx, nasSecCtx)
-			if err != nil {
-				log.Printf("ERROR: [UE] Failed to build Registration Complete: %v", err)
-				return
-			}
+			// responsePDU, err = BuildRegistrationComplete(ueCtx, nasSecCtx)
+			// if err != nil {
+			// 	log.Printf("ERROR: [UE] Failed to build Registration Complete: %v", err)
+			// 	return
+			// }
 
 			ueCtx.Radio.UplinkChan <- responsePDU
 			log.Println("INFO: [UE] Sent Registration Complete to gNB. Registration procedure finished.")
@@ -165,11 +172,10 @@ func BuildAuthenticationResponse(ueCtx *context.UEContext, res []byte) ([]byte, 
 	log.Println("INFO: --- [UE - Step 5a] Building NAS Authentication Response ---")
 
 	msg := new(nas.AuthenticationResponse)
-	msg.SetSecurityHeader(1)
+	msg.SetSecurityHeader(0)
 	msg.AuthenticationResponseParameter = res
 
-	nasCtx := nas.NewNasContext(false)
-	data, err := nas.EncodeMm(nasCtx, msg, false)
+	data, err := nas.EncodeMm(nil, msg, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode NAS Authentication Response: %w", err)
 	}
