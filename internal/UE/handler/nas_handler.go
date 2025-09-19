@@ -14,7 +14,7 @@ func BuildRegistrationRequest(ueCtx *context.UEContext) ([]byte, error) {
 
 	msg := new(nas.RegistrationRequest)
 
-	msg.SetSecurityHeader(1)
+	msg.SetSecurityHeader(0)
 
 	msg.RegistrationType = nas.NewRegistrationType(true, nas.RegistrationType5GSInitialRegistration)
 
@@ -36,8 +36,7 @@ func BuildRegistrationRequest(ueCtx *context.UEContext) ([]byte, error) {
 	msg.UeSecurityCapability.SetIA(1, true)
 	msg.UeSecurityCapability.SetIA(2, true)
 
-	nasCtx := nas.NewNasContext(false)
-	data, err := nas.EncodeMm(nasCtx, msg, false)
+	data, err := nas.EncodeMm(nil, msg, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode NAS Registration Request: %w", err)
 	}
