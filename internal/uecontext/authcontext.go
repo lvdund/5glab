@@ -111,11 +111,11 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
 	// 3. calculate MacA and verify
 	macA, _, _ := auth.milenage.F1(netSqn, auth.amf)
 
-	/*
+	
 	fmt.Printf("[DEBUG] UE SQN (before AUTN): %x\n", ueSqn)
 	fmt.Printf("[DEBUG] Network SQN (decoded): %x\n", netSqn)
 	fmt.Printf("[DEBUG] MAC-A (from network AUTN): %x\n", netMacA)
-	fmt.Printf("[DEBUG] MAC-A (calculated by UE): %x\n", macA)*/
+	fmt.Printf("[DEBUG] MAC-A (calculated by UE): %x\n", macA)
 
 	if !bytes.Equal(macA, netMacA) {
 		fmt.Println("[WARN] MAC verification failed → prepare AUTS (resync)")
@@ -207,3 +207,4 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
 	errCode = AUTH_SUCCESS
 	return
 }
+

@@ -36,3 +36,6 @@ go.work.sum
 /internal/uecontext/register.go
 
 /tools/
+
+/internal/uecontext/sec/kdf.go
+

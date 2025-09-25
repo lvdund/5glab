@@ -43,43 +43,25 @@ func main() {
 	// Start NGAP handler
 	go gnb.HandleNgapMsg()
 
-	// Goroutine: forward UE NAS messages to gNB
-	/*go func() {
+	// Forward UE NAS messages to gNB (needed for HandlerUeNasMsg)
+	go func() {
 		for msg := range sendUeMsgChan {
 			gnb.RevUeMsgChan <- msg
 		}
-	}()*/
+	}()
 
-/*	// Goroutine: gNB forward NAS message to AMF via SCTP
-go func() {
-    for msg := range gnb.RevUeMsgChan {
-        fmt.Println("[gNB] Sending NAS msg to AMF, len:", len(msg))
-        err = sctpConn.Send(msg) // gửi NAS message qua SCTP
-        if err != nil {
-            fmt.Println("[gNB] Error sending NAS to AMF:", err)
-        }
-    }
-}()
-*/
-go gnb.HandlerUeNasMsg()
+	// Start gNB UE NAS handler
+	go gnb.HandlerUeNasMsg()
 
-// Forward NAS từ UEContext sang gNB UeUplinkChan
-go func() {
-    for msg := range sendUeMsgChan {  // sendUeMsgChan: UE -> gNB
-        gnb.UeUplinkChan <- msg       // gửi vào channel mới
-    }
-}()
-
-// Goroutine: gNB process NAS from UE → UplinkNASTransport
-go gnb.HandleUeUplinkNAS()
-
+	// gNB process NAS from UE → UplinkNASTransport
+	go gnb.HandleUeUplinkNAS()
 
 	// Goroutine: read NGAP from AMF
 	go func() {
 		buf := make([]byte, 4096)
 		for {
 			n, err := conn.Read(buf)
-			fmt.Println("[gNB] SCTP Write returned:", n, err)
+			fmt.Println("[gNB] SCTP Read returned:", n, err)
 			if err != nil {
 				log.Printf("Error reading from AMF: %v", err)
 				close(gnb.NgapMsgChan)
@@ -99,7 +81,7 @@ go gnb.HandleUeUplinkNAS()
 	}
 
 	// Wait for NGSetupResponse (timeout 15s)
-	timeout := time.After(15* time.Second)
+	timeout := time.After(15 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -108,7 +90,6 @@ waitAMF:
 		select {
 		case <-timeout:
 			log.Fatal("Timeout: did not receive NGSetupResponse from AMF")
-			os.Exit(1)
 		case <-ticker.C:
 			if gnb.AmfConnected {
 				fmt.Println("gNB successfully connected to AMF")
@@ -122,8 +103,8 @@ waitAMF:
 		cfg.UE.SUPI,
 		cfg.UE.PLMN,
 		int(cfg.GNB.RanUeNgapIdStart),
-		revUeMsgChan,    // gNB -> UE
-		sendUeMsgChan,   // UE -> gNB
+		revUeMsgChan,   // gNB -> UE
+		sendUeMsgChan,  // UE -> gNB
 	)
 
 	// Start UE NAS handler

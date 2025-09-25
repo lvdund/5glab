@@ -1,16 +1,15 @@
 package gnbcontext
 
 import (
-	"emulator/internal/sctp"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"log"
+
+	"emulator/internal/sctp"
 
 	"github.com/lvdund/ngap"
 	"github.com/lvdund/ngap/aper"
 	"github.com/lvdund/ngap/ies"
-	"github.com/lvdund/ngap/utils"
 )
 
 type GnbContext struct {
@@ -27,16 +26,15 @@ type GnbContext struct {
 	RevUeMsgChan  chan []byte
 	SendUeMsgChan chan []byte
 
-	RanUeNgapId    uint64
-	AmfUeNgapId    uint64
-	initialSent    bool
+	RanUeNgapId   uint64
+	AmfUeNgapId   uint64
+	initialSent   bool
 	ueContextReady bool
 	nasBuf         chan []byte
 	UeUplinkChan   chan []byte
 	CellID         uint32
 }
 
-// NewGnbContext
 func NewGnbContext(
 	gnbId, plmn, ip string,
 	tac, port int,
@@ -52,9 +50,9 @@ func NewGnbContext(
 
 		AmfConnected: false,
 
-		RanUeNgapId: 1,
-		AmfUeNgapId: 0,
-		initialSent: false,
+		RanUeNgapId:   1,
+		AmfUeNgapId:   0,
+		initialSent:   false,
 
 		sctpConn:      sctpConn,
 		NgapMsgChan:   ngMsgChan,
@@ -66,12 +64,12 @@ func NewGnbContext(
 }
 
 func (g *GnbContext) GetNRCellIdentity() []byte {
-	buf := make([]byte, 5) // NR Cell ID = 36 bits = 4.5 bytes, padding to 5
+	buf := make([]byte, 5) // 36 bit = 4.5 byte → padding 5 byte
 	binary.BigEndian.PutUint32(buf[0:4], g.CellID<<4)
 	return buf
 }
 
-// convert PLMN string -> 3 bytes
+// convert PLMN string -> 3 bytes (MCC+MNC)
 func (gnb *GnbContext) getMccAndMncInOctets() []byte {
 	if len(gnb.Plmn) < 5 || len(gnb.Plmn) > 6 {
 		log.Fatalf("Invalid PLMN length: %s", gnb.Plmn)
@@ -99,7 +97,7 @@ func (gnb *GnbContext) getMccAndMncInOctets() []byte {
 
 // convert GNBID -> 3 bytes
 func (gnb *GnbContext) getGnbIdInBytes() []byte {
-	return []byte{0x01, 0x02, 0x03}
+	return []byte{0x01, 0x02, 0x03} // bạn có thể convert thực tế từ gnb.GnbId
 }
 
 // convert TAC -> 3 bytes
@@ -111,27 +109,51 @@ func (gnb *GnbContext) getTacInBytes() []byte {
 	}
 }
 
-// HandleNgapMsg process NGAP from AMF
+// --- NGAP Handler ---
+
 func (gnb *GnbContext) HandleNgapMsg() {
 	for msg := range gnb.NgapMsgChan {
-		// decode & let handler extract AMF/RAN IDs and forward downlink NAS
-		gnb.ngapHandler(msg, gnb.SendUeMsgChan, gnb.nasBuf)
+		fmt.Printf("[gNB] HandleNgapMsg: received NGAP msg len=%d\n", len(msg))
+		fmt.Printf("[gNB] current state: initialSent=%v, AmfUeNgapId=%d, ueContextReady=%v\n",
+			gnb.initialSent, gnb.AmfUeNgapId, gnb.ueContextReady)
 
-		// Only mark UE context ready when AMF UE NGAP ID is known (non-zero)
+		// decode NGAP message
+		pdu, err, _ := ngap.NgapDecode(msg)
+		if err != nil {
+			fmt.Printf("[gNB] NGAP decode error: %v\n", err)
+			continue
+		}
+
+		switch pdu.Present {
+		case ies.NgapPduSuccessfulOutcome:
+			if _, ok := pdu.Message.Msg.(*ies.NGSetupResponse); ok {
+				fmt.Printf("[gNB] Received NG Setup Response from AMF\n")
+				gnb.AmfConnected = true
+			}
+		case ies.NgapPduInitiatingMessage:
+	if downlink, ok := pdu.Message.Msg.(*ies.DownlinkNASTransport); ok {
+		gnb.AmfUeNgapId = uint64(downlink.AMFUENGAPID)
+		fmt.Printf("[gNB] Learned AMF UE NGAP ID: %d\n", gnb.AmfUeNgapId)
+
+		// Forward NAS message xuống UE
+		select {
+		case gnb.SendUeMsgChan <- downlink.NASPDU:
+			fmt.Println("[gNB] Forwarded NAS PDU to UE")
+		default:
+			fmt.Println("[gNB] SendUeMsgChan full, cannot forward NAS PDU")
+		}
+	}
+
+		}
+
+		// flush NAS buffer if UE context ready
 		if gnb.initialSent && gnb.AmfUeNgapId != 0 && !gnb.ueContextReady {
 			gnb.ueContextReady = true
-			fmt.Printf("[gNB] AMF UE NGAP ID known (%d) → set ueContextReady = true and flush buffer\n", gnb.AmfUeNgapId)
-
-			// flush buffered uplink NAS PDUs into UeUplinkChan for sending
+			fmt.Printf("[gNB] UE context ready, flushing buffered NAS PDUs\n")
 			for {
 				select {
 				case pdu := <-gnb.nasBuf:
-					select {
-					case gnb.UeUplinkChan <- pdu:
-					default:
-						// channel full — requeue to avoid drop
-						go func(b []byte) { gnb.nasBuf <- b }(pdu)
-					}
+					gnb.UeUplinkChan <- pdu
 				default:
 					goto flushed
 				}
@@ -141,33 +163,31 @@ func (gnb *GnbContext) HandleNgapMsg() {
 	}
 }
 
-// HandlerUeNasMsg process NAS from UE → InitialUEMessage sends AMF
 func (gnb *GnbContext) HandlerUeNasMsg() {
 	for msg := range gnb.RevUeMsgChan {
-		uli := ies.UserLocationInformation{
-			Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
-			UserLocationInformationNR: &ies.UserLocationInformationNR{
-				TAI: ies.TAI{
-					PLMNIdentity: gnb.getMccAndMncInOctets(),
-					TAC:          gnb.getTacInBytes(),
-				},
-				NRCGI: ies.NRCGI{
-					PLMNIdentity: gnb.getMccAndMncInOctets(),
-					NRCellIdentity: aper.BitString{
-						Bytes:   []byte{0x11, 0x22, 0x33, 0x44, 0x55},
-						NumBits: 36,
+		if !gnb.initialSent {
+			fmt.Println("[gNB] Sending InitialUEMessage")
+			ngapMsg := ies.InitialUEMessage{
+				RANUENGAPID: int64(gnb.RanUeNgapId),
+				NASPDU:      msg,
+				UserLocationInformation: ies.UserLocationInformation{
+					Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
+					UserLocationInformationNR: &ies.UserLocationInformationNR{
+						NRCGI: ies.NRCGI{
+							PLMNIdentity: gnb.getMccAndMncInOctets(),
+							NRCellIdentity: aper.BitString{
+								Bytes:   gnb.GetNRCellIdentity(),
+								NumBits: 36,
+							},
+						},
+						TAI: ies.TAI{
+							PLMNIdentity: gnb.getMccAndMncInOctets(),
+							TAC:          gnb.getTacInBytes(),
+						},
 					},
 				},
-			},
-		}
-
-		if !gnb.initialSent {
-			ngapMsg := ies.InitialUEMessage{
-				RANUENGAPID:             int64(gnb.RanUeNgapId),
-				NASPDU:                  msg,
-				UserLocationInformation: uli,
-				RRCEstablishmentCause:   ies.RRCEstablishmentCause{Value: 1},
-				UEContextRequest:        &ies.UEContextRequest{},
+				RRCEstablishmentCause: ies.RRCEstablishmentCause{Value: 1},
+				UEContextRequest:      &ies.UEContextRequest{Value: ies.UEContextRequestRequested},
 			}
 
 			buf, err := ngap.NgapEncode(&ngapMsg)
@@ -178,42 +198,53 @@ func (gnb *GnbContext) HandlerUeNasMsg() {
 				log.Fatalf("Failed to send InitialUEMessage: %v", err)
 			}
 			gnb.initialSent = true
-			fmt.Println("Sent InitialUEMessage → AMF (PPID=60)")
+			fmt.Println("================================[gNB] Sent InitialUEMessage → AMF (PPID=60)")
 
 		} else if gnb.ueContextReady {
+			fmt.Println("[gNB] Sending UplinkNASTransport")
 			uplink := ies.UplinkNASTransport{
-				RANUENGAPID:             int64(gnb.RanUeNgapId),
-				AMFUENGAPID:             int64(gnb.AmfUeNgapId),
-				NASPDU:                  msg,
-				UserLocationInformation: uli,
+				RANUENGAPID: int64(gnb.RanUeNgapId),
+				AMFUENGAPID: int64(gnb.AmfUeNgapId),
+				NASPDU:      msg,
+				UserLocationInformation: ies.UserLocationInformation{
+					Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
+					UserLocationInformationNR: &ies.UserLocationInformationNR{
+						NRCGI: ies.NRCGI{
+							PLMNIdentity: gnb.getMccAndMncInOctets(),
+							NRCellIdentity: aper.BitString{
+								Bytes:   gnb.GetNRCellIdentity(),
+								NumBits: 36,
+							},
+						},
+						TAI: ies.TAI{
+							PLMNIdentity: gnb.getMccAndMncInOctets(),
+							TAC:          gnb.getTacInBytes(),
+						},
+					},
+				},
 			}
 
 			buf, err := ngap.NgapEncode(&uplink)
 			if err != nil {
-				log.Fatalf("Cannot encode UplinkNASTransport === : %v", err)
+				log.Fatalf("Cannot encode UplinkNASTransport: %v", err)
 			}
 			if err := gnb.sctpConn.Send(buf); err != nil {
 				log.Fatalf("Failed to send UplinkNASTransport: %v", err)
 			}
-			fmt.Println("Sent UplinkNASTransport → AMF (PPID=60)")
+			fmt.Println("[gNB] Sent UplinkNASTransport → AMF (PPID=60)")
+
 		} else {
-			// Buffer the uplink NAS PDU until AMF responded and we set ueContextReady
-			fmt.Println("UE context chưa ready, buffer NAS PDU")
+			fmt.Println("[gNB] UE context chưa ready, buffer NAS PDU")
 			select {
 			case gnb.nasBuf <- msg:
-				// buffered
 			default:
-				select {
-				case <-gnb.nasBuf:
-				default:
-				}
+				select { case <-gnb.nasBuf: default: }
 				gnb.nasBuf <- msg
 			}
 		}
 	}
 }
 
-// SendNgSetupRequest sends NG Setup Request to AMF
 func (gnb *GnbContext) SendNgSetupRequest() error {
 	globalRAN := ies.GlobalRANNodeID{
 		Choice: ies.GlobalRANNodeIDPresentGlobalgnbId,
@@ -235,18 +266,8 @@ func (gnb *GnbContext) SendNgSetupRequest() error {
 			{
 				PLMNIdentity: gnb.getMccAndMncInOctets(),
 				TAISliceSupportList: []ies.SliceSupportItem{
-					{
-						SNSSAI: ies.SNSSAI{
-							SST: []byte{0x01},
-							SD:  []byte{0x01, 0x02, 0x03},
-						},
-					},
-					{
-						SNSSAI: ies.SNSSAI{
-							SST: []byte{0x01},
-							SD:  []byte{0x11, 0x22, 0x33},
-						},
-					},
+					{SNSSAI: ies.SNSSAI{SST: []byte{0x01}, SD: []byte{0x01, 0x02, 0x03}}},
+					{SNSSAI: ies.SNSSAI{SST: []byte{0x01}, SD: []byte{0x11, 0x22, 0x33}}},
 				},
 			},
 		},
@@ -268,130 +289,37 @@ func (gnb *GnbContext) SendNgSetupRequest() error {
 		return err
 	}
 
-	log.Println("NG Setup Request sent to AMF")
+	log.Println("========================================NG Setup Request sent to AMF")
 	return nil
 }
 
 func (gnb *GnbContext) HandleUeUplinkNAS() {
 	for nasPdu := range gnb.UeUplinkChan {
 		if !gnb.ueContextReady {
-			fmt.Println("[gNB] UE context chưa ready, buffer NAS PDU")
-			// push into nasBuf (non-blocking attempt)
 			select {
 			case gnb.nasBuf <- nasPdu:
 			default:
-				// if buffer full, discard oldest then push
-				select {
-				case <-gnb.nasBuf:
-				default:
-				}
+				select { case <-gnb.nasBuf: default: }
 				gnb.nasBuf <- nasPdu
 			}
 			continue
 		}
 
-		var gnbid_in_byte []byte
-		gnbid_in_byte, _ = hex.DecodeString(gnb.GnbId)
-		slice := make([]byte, 2)
-
-		cellid := aper.BitString{
-			Bytes:   append(gnbid_in_byte, slice...),
-			NumBits: 36,
-		}
-
-		tac, _ := hex.DecodeString("000001")
-
-		// UplinkNASTransport
 		uplink := ies.UplinkNASTransport{
 			RANUENGAPID: int64(gnb.RanUeNgapId),
 			AMFUENGAPID: int64(gnb.AmfUeNgapId),
 			NASPDU:      nasPdu,
-			UserLocationInformation: ies.UserLocationInformation{
-				Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
-				UserLocationInformationNR: &ies.UserLocationInformationNR{
-					NRCGI: ies.NRCGI{
-						PLMNIdentity:   utils.PlmnIdToNgap(utils.PlmnId{Mcc: "208", Mnc: "93"}),
-						NRCellIdentity: cellid,
-					},
-					TAI: ies.TAI{
-						PLMNIdentity: utils.PlmnIdToNgap(utils.PlmnId{Mcc: "208", Mnc: "93"}),
-						TAC: tac,
-					},
-				},
-			},
 		}
 
 		buf, err := ngap.NgapEncode(&uplink)
 		if err != nil {
-			log.Printf("Cannot encode UplinkNASTransport --- : %v", err)
+			log.Printf("Cannot encode UplinkNASTransport: %v", err)
 			continue
 		}
 		if err := gnb.sctpConn.Send(buf); err != nil {
 			log.Printf("Failed to send UplinkNASTransport: %v", err)
 			continue
 		}
-		fmt.Println("Sent UplinkNASTransport → AMF (PPID=60)")
+		fmt.Println("[gNB] Sent UplinkNASTransport → AMF (PPID=60)")
 	}
 }
-
-// 4/9/2025
-/*
-
-func (gnb *GnbContext) getPLMNIdentity() []byte {
-    // PLMN lưu trong gnb.Plmn dạng "20893" → MCC=208, MNC=93
-    if len(gnb.Plmn) < 5 {
-        return []byte{0x00, 0x00, 0x00}
-    }
-    mcc := gnb.Plmn[:3]
-    mnc := gnb.Plmn[3:]
-
-    // PLMN encoding theo 3GPP TS 24.008 BCD
-    return []byte{
-        byte((mcc[1]-'0')<<4 | (mcc[0]-'0')),
-        byte((mnc[2]-'0')<<4 | (mcc[2]-'0')),
-        byte((mnc[1]-'0')<<4 | (mnc[0]-'0')),
-    }
-}
-
-
-func (gnb *GnbContext) getNRCellIdentity() []byte {
-    // Ví dụ cellID=0xCAFE000 (20 bit), padding 36 bit
-    return []byte{0xCA, 0xFE, 0x00, 0x00, 0x00}
-}
-
-
-
-
-func (gnb *GnbContext) buildUplinkNasTransport(nasPdu []byte) ([]byte, error) {
-    fmt.Println("[gNB] Build UplinkNasTransport")
-
-    msg := ies.UplinkNASTransport{}
-
-    msg.AMFUENGAPID = int64(gnb.AmfUeNgapId)
-    msg.RANUENGAPID = int64(gnb.RanUeNgapId)
-    msg.NASPDU = nasPdu
-
-    plmnid := gnb.getPLMNIdentity()
-    cellid := gnb.getNRCellIdentity()
-    tac := gnb.getTacInBytes()
-
-    msg.UserLocationInformation = ies.UserLocationInformation{
-    Choice: ies.UserLocationInformationPresentUserlocationinformationnr,
-    UserLocationInformationNR: &ies.UserLocationInformationNR{
-        NRCGI: ies.NRCGI{
-            PLMNIdentity:   plmnid,
-            NRCellIdentity: aper.BitString{
-                Bytes:   cellid,
-                NumBits: 36, // NRCellIdentity dài 36 bit
-            },
-        },
-        TAI: ies.TAI{
-            PLMNIdentity: plmnid,
-            TAC:          tac,
-        },
-    },
-}
-
-    return ngap.NgapEncode(&msg)
-}
-*/
