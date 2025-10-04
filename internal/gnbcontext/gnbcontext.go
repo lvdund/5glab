@@ -117,7 +117,7 @@ func (gnb *GnbContext) HandleNgapMsg() {
 		fmt.Printf("[gNB] current state: initialSent=%v, AmfUeNgapId=%d, ueContextReady=%v\n",
 			gnb.initialSent, gnb.AmfUeNgapId, gnb.ueContextReady)
 
-		// decode NGAP message
+		// Decode NGAP message
 		pdu, err, _ := ngap.NgapDecode(msg)
 		if err != nil {
 			fmt.Printf("[gNB] NGAP decode error: %v\n", err)
@@ -126,39 +126,148 @@ func (gnb *GnbContext) HandleNgapMsg() {
 
 		switch pdu.Present {
 		case ies.NgapPduSuccessfulOutcome:
+			// NG Setup Response
 			if _, ok := pdu.Message.Msg.(*ies.NGSetupResponse); ok {
 				fmt.Printf("[gNB] Received NG Setup Response from AMF\n")
 				gnb.AmfConnected = true
 			}
-		case ies.NgapPduInitiatingMessage:
-	if downlink, ok := pdu.Message.Msg.(*ies.DownlinkNASTransport); ok {
-		gnb.AmfUeNgapId = uint64(downlink.AMFUENGAPID)
-		fmt.Printf("[gNB] Learned AMF UE NGAP ID: %d\n", gnb.AmfUeNgapId)
 
-		// Forward NAS message xuống UE
-		select {
-		case gnb.SendUeMsgChan <- downlink.NASPDU:
-			fmt.Println("[gNB] Forwarded NAS PDU to UE")
+		case ies.NgapPduInitiatingMessage:
+			switch pdu.Message.ProcedureCode.Value {
+			
+			case ies.ProcedureCode_DownlinkNASTransport:
+				fmt.Println("[gNB] Receive Downlink NAS Transport")
+				if downlink, ok := pdu.Message.Msg.(*ies.DownlinkNASTransport); ok {
+					// Update IDs
+					if downlink.AMFUENGAPID != 0 {
+						gnb.AmfUeNgapId = uint64(downlink.AMFUENGAPID)
+						fmt.Printf("[gNB] Learned AMF UE NGAP ID: %d\n", gnb.AmfUeNgapId)
+					}
+					if downlink.RANUENGAPID != 0 {
+						gnb.RanUeNgapId = uint64(downlink.RANUENGAPID)
+					}
+
+					// UE context ready after receiving first downlink
+					if !gnb.ueContextReady {
+						gnb.ueContextReady = true
+					}
+
+					// Forward NAS PDU to UE
+					nas := nasToBytes(downlink.NASPDU)
+					if len(nas) > 0 {
+						fmt.Printf("[gNB] Forward NAS → UE (%d bytes)\n", len(nas))
+						select {
+						case gnb.SendUeMsgChan <- nas:
+							fmt.Println("[gNB] Forwarded NAS PDU to UE")
+						default:
+							fmt.Println("[gNB] SendUeMsgChan full, cannot forward NAS PDU")
+						}
+					}
+				}
+
+			case ies.ProcedureCode_InitialContextSetup:
+				fmt.Println("[gNB] ========== Receive InitialContextSetupRequest ==========")
+				if icsReq, ok := pdu.Message.Msg.(*ies.InitialContextSetupRequest); ok {
+					// Update IDs
+					if icsReq.AMFUENGAPID != 0 {
+						gnb.AmfUeNgapId = uint64(icsReq.AMFUENGAPID)
+						fmt.Printf("[gNB] Set AMF_UE_NGAP_ID=%d\n", gnb.AmfUeNgapId)
+					}
+					if icsReq.RANUENGAPID != 0 {
+						gnb.RanUeNgapId = uint64(icsReq.RANUENGAPID)
+						fmt.Printf("[gNB] Set RAN_UE_NGAP_ID=%d\n", gnb.RanUeNgapId)
+					}
+
+					// Mark UE context as ready
+					gnb.ueContextReady = true
+
+					// Extract and forward NAS-PDU (Registration Accept)
+					nas := nasToBytes(icsReq.NASPDU)
+					if len(nas) > 0 {
+						fmt.Printf("[gNB] Forward NAS (Registration Accept) → UE (%d bytes): %x\n", len(nas), nas)
+						select {
+						case gnb.SendUeMsgChan <- nas:
+							fmt.Println("[gNB] Successfully forwarded Registration Accept to UE")
+						default:
+							fmt.Println("[gNB] ERROR: SendUeMsgChan full, cannot forward Registration Accept")
+						}
+					} else {
+						fmt.Println("[gNB] WARNING: No NAS-PDU in InitialContextSetupRequest")
+					}
+
+					// Send Initial Context Setup Response back to AMF
+					go gnb.sendInitialContextSetupResponse()
+				}
+
+			case ies.ProcedureCode_ErrorIndication:
+				if errInd, ok := pdu.Message.Msg.(*ies.ErrorIndication); ok {
+					fmt.Printf("[gNB] ErrorIndication from AMF: AMFUENGAPID=%v, RANUENGAPID=%v, Cause=%v\n",
+						errInd.AMFUENGAPID, errInd.RANUENGAPID, errInd.Cause)
+				}
+
+			default:
+				fmt.Printf("[gNB] Unhandled Initiating Message, ProcedureCode=%d\n", 
+					pdu.Message.ProcedureCode.Value)
+			}
+
+		case ies.NgapPduUnsuccessfulOutcome:
+			if pdu.Message.ProcedureCode.Value == ies.ProcedureCode_NGSetup {
+				fmt.Println("[gNB] Receive NG Setup Failure")
+				gnb.AmfConnected = false
+			}
+
 		default:
-			fmt.Println("[gNB] SendUeMsgChan full, cannot forward NAS PDU")
+			fmt.Printf("[gNB] Unknown NGAP PDU present: %d\n", pdu.Present)
+		}
+
+		// Flush buffered NAS PDUs if context just became ready
+		if gnb.initialSent && gnb.AmfUeNgapId != 0 && gnb.ueContextReady {
+			gnb.flushNasBuffer()
 		}
 	}
+}
 
-		}
+// Send Initial Context Setup Response
+func (gnb *GnbContext) sendInitialContextSetupResponse() {
+	if gnb.AmfUeNgapId == 0 || gnb.RanUeNgapId == 0 {
+		log.Printf("[gNB] Cannot send ICS Response: AMF_ID=%d, RAN_ID=%d", 
+			gnb.AmfUeNgapId, gnb.RanUeNgapId)
+		return
+	}
 
-		// flush NAS buffer if UE context ready
-		if gnb.initialSent && gnb.AmfUeNgapId != 0 && !gnb.ueContextReady {
-			gnb.ueContextReady = true
-			fmt.Printf("[gNB] UE context ready, flushing buffered NAS PDUs\n")
-			for {
-				select {
-				case pdu := <-gnb.nasBuf:
-					gnb.UeUplinkChan <- pdu
-				default:
-					goto flushed
-				}
+	response := &ies.InitialContextSetupResponse{
+		AMFUENGAPID: int64(gnb.AmfUeNgapId),
+		RANUENGAPID: int64(gnb.RanUeNgapId),
+		// PDU Session Resource Setup Response List - empty for now
+	}
+
+	buf, err := ngap.NgapEncode(response)
+	if err != nil {
+		log.Printf("[gNB] Failed to encode InitialContextSetupResponse: %v", err)
+		return
+	}
+
+	if err := gnb.sctpConn.Send(buf); err != nil {
+		log.Printf("[gNB] Failed to send InitialContextSetupResponse: %v", err)
+		return
+	}
+
+	fmt.Println("[gNB] ========== Sent InitialContextSetupResponse → AMF ==========")
+}
+
+// Flush buffered NAS PDUs
+func (gnb *GnbContext) flushNasBuffer() {
+	flushed := 0
+	for {
+		select {
+		case pdu := <-gnb.nasBuf:
+			gnb.UeUplinkChan <- pdu
+			flushed++
+		default:
+			if flushed > 0 {
+				fmt.Printf("[gNB] Flushed %d buffered NAS PDUs\n", flushed)
 			}
-		flushed:
+			return
 		}
 	}
 }
