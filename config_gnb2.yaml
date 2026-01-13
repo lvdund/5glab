@@ -1,0 +1,14 @@
+amf:
+  ip: "192.168.56.101"
+  port: 38412
+
+gnb:
+  gnbId: "000009"       
+  ranUeNgapIdStart: 2000  
+  ip: "192.168.56.1"       
+  port: 38414              
+  tac: 0x000001           
+
+ue:
+  supi: "imsi-208930000000001"
+  plmn: "20893"

@@ -5,12 +5,11 @@ go 1.24
 toolchain go1.24.6
 
 require (
-	github.com/alitto/pond/v2 v2.5.0
 	github.com/ishidawataru/sctp v0.0.0-20250708014235-1989182a9425
 	github.com/lvdund/ngap v1.4.13
 	github.com/reogac/nas v1.2.0
 	github.com/reogac/utils v1.0.6
-	gopkg.in/yaml.v3 v3.0.1
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (

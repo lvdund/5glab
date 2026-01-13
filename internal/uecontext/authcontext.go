@@ -42,9 +42,6 @@ func kdfPreimage(fc byte, p0 []byte, p1 []byte) []byte {
 }
 
 
-
-// Complete debug version để tìm vấn đề KAMF derivation
-
 func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode uint8, output []byte) {
     if len(autn) < 14 {
         fmt.Printf("[ERROR] AUTN too short: len=%d\n", len(autn))
@@ -98,8 +95,8 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
     }
     fmt.Println("[INFO] MAC verification passed")
 
-    // === KEY FIX: Thử cả hai cách ===
-    fmt.Println("========== TESTING BOTH KAUSF DERIVATION METHODS ==========")
+    
+    //fmt.Println("========== TESTING BOTH KAUSF DERIVATION METHODS ==========")
     
     // Method 1: Use SQN⊕AK (from AUTN directly)
     servingNetStr1 := buildServingNetworkFromSNN(auth.snn)
@@ -108,38 +105,38 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
     kAusf1, _ := sec.KAUSF(key, servingNetBytes1, sqnXorAk)  // Use SQN⊕AK
     kSeaf1, _ := sec.SeafKey(kAusf1, servingNetBytes1)
     
-    fmt.Printf("[METHOD 1] Serving Network: %s\n", servingNetStr1)
-    fmt.Printf("[METHOD 1] Using SQN⊕AK: %x\n", sqnXorAk)
-    fmt.Printf("[METHOD 1] KAUSF: %x\n", kAusf1)
-    fmt.Printf("[METHOD 1] KSEAF: %x\n", kSeaf1)
+    // fmt.Printf("[METHOD 1] Serving Network: %s\n", servingNetStr1)
+    // fmt.Printf("[METHOD 1] Using SQN⊕AK: %x\n", sqnXorAk)
+    // fmt.Printf("[METHOD 1] KAUSF: %x\n", kAusf1)
+    // fmt.Printf("[METHOD 1] KSEAF: %x\n", kSeaf1)
     
     // Method 2: Use decoded SQN
-    kAusf2, _ := sec.KAUSF(key, servingNetBytes1, netSqn)    // Use decoded SQN
-    kSeaf2, _ := sec.SeafKey(kAusf2, servingNetBytes1)
+    //kAusf2, _ := sec.KAUSF(key, servingNetBytes1, netSqn)    // Use decoded SQN
+    //kSeaf2, _ := sec.SeafKey(kAusf2, servingNetBytes1)
     
-    fmt.Printf("[METHOD 2] Using decoded SQN: %x\n", netSqn)
-    fmt.Printf("[METHOD 2] KAUSF: %x\n", kAusf2)
-    fmt.Printf("[METHOD 2] KSEAF: %x\n", kSeaf2)
+    // fmt.Printf("[METHOD 2] Using decoded SQN: %x\n", netSqn)
+    // fmt.Printf("[METHOD 2] KAUSF: %x\n", kAusf2)
+    // fmt.Printf("[METHOD 2] KSEAF: %x\n", kSeaf2)
 
     // Try different serving network formats
-    servingNetStr2 := fmt.Sprintf("5G:mnc%s.mcc%s.3gppnetwork.org", 
-        string(auth.snn[3:]), string(auth.snn[:3]))
-    servingNetBytes2 := []byte(servingNetStr2)
+    //servingNetStr2 := fmt.Sprintf("5G:mnc%s.mcc%s.3gppnetwork.org", 
+    //    string(auth.snn[3:]), string(auth.snn[:3]))
+    //servingNetBytes2 := []byte(servingNetStr2)
     
-    kAusf3, _ := sec.KAUSF(key, servingNetBytes2, sqnXorAk)
-    kSeaf3, _ := sec.SeafKey(kAusf3, servingNetBytes2)
+    //kAusf3, _ := sec.KAUSF(key, servingNetBytes2, sqnXorAk)
+    //kSeaf3, _ := sec.SeafKey(kAusf3, servingNetBytes2)
     
-    fmt.Printf("[METHOD 3] Alternative serving network: %s\n", servingNetStr2)
-    fmt.Printf("[METHOD 3] KAUSF: %x\n", kAusf3)
-    fmt.Printf("[METHOD 3] KSEAF: %x\n", kSeaf3)
+    // fmt.Printf("[METHOD 3] Alternative serving network: %s\n", servingNetStr2)
+    // fmt.Printf("[METHOD 3] KAUSF: %x\n", kAusf3)
+    // fmt.Printf("[METHOD 3] KSEAF: %x\n", kSeaf3)
     
     // Try with raw SNN directly
-    kAusf4, _ := sec.KAUSF(key, auth.snn, sqnXorAk)
-    kSeaf4, _ := sec.SeafKey(kAusf4, auth.snn)
+    //kAusf4, _ := sec.KAUSF(key, auth.snn, sqnXorAk)
+    //kSeaf4, _ := sec.SeafKey(kAusf4, auth.snn)
     
-    fmt.Printf("[METHOD 4] Using raw SNN: %s (%x)\n", string(auth.snn), auth.snn)
-    fmt.Printf("[METHOD 4] KAUSF: %x\n", kAusf4)
-    fmt.Printf("[METHOD 4] KSEAF: %x\n", kSeaf4)
+    // fmt.Printf("[METHOD 4] Using raw SNN: %s (%x)\n", string(auth.snn), auth.snn)
+    // fmt.Printf("[METHOD 4] KAUSF: %x\n", kAusf4)
+    // fmt.Printf("[METHOD 4] KSEAF: %x\n", kSeaf4)
     
     fmt.Println("============================================================")
 
@@ -158,19 +155,19 @@ func (auth *AuthContext) ProcessAuthenticationInfo(autn, abba []byte) (errCode u
     fmt.Printf("[DEBUG] ABBA (P1): %x\n", abba)
     
     // Derive KAMF using all methods
-    fmt.Println("========== KAMF DERIVATION COMPARISON ==========")
+    //fmt.Println("========== KAMF DERIVATION COMPARISON ==========")
     
     kamf1, _ := sec.KAMF(kSeaf1, imsiOnly, abba)
-    fmt.Printf("[KAMF METHOD 1] (SQN⊕AK + standard SNN): %x\n", kamf1)
+    //fmt.Printf("[KAMF METHOD 1] (SQN⊕AK + standard SNN): %x\n", kamf1)
     
-    kamf2, _ := sec.KAMF(kSeaf2, imsiOnly, abba)
-    fmt.Printf("[KAMF METHOD 2] (decoded SQN + standard SNN): %x\n", kamf2)
+    //kamf2, _ := sec.KAMF(kSeaf2, imsiOnly, abba)
+    //fmt.Printf("[KAMF METHOD 2] (decoded SQN + standard SNN): %x\n", kamf2)
     
-    kamf3, _ := sec.KAMF(kSeaf3, imsiOnly, abba)
-    fmt.Printf("[KAMF METHOD 3] (SQN⊕AK + alt SNN): %x\n", kamf3)
+    //kamf3, _ := sec.KAMF(kSeaf3, imsiOnly, abba)
+    //fmt.Printf("[KAMF METHOD 3] (SQN⊕AK + alt SNN): %x\n", kamf3)
     
-    kamf4, _ := sec.KAMF(kSeaf4, imsiOnly, abba)
-    fmt.Printf("[KAMF METHOD 4] (SQN⊕AK + raw SNN): %x\n", kamf4)
+    //kamf4, _ := sec.KAMF(kSeaf4, imsiOnly, abba)
+   // fmt.Printf("[KAMF METHOD 4] (SQN⊕AK + raw SNN): %x\n", kamf4)
     
     
     // Choose the method that matches AMF (you'll need to check logs)
